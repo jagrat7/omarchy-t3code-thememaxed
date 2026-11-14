@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Republishes the T3 Code theme after a font change, so T3 Code takes the new
+# system font.
+# https://github.com/jagrat7/omarchy-t3code-theme
+publisher="$HOME/.local/bin/sync-t3code-omarchy-theme"
+[[ -x $publisher ]] || exit 0
+exec "$publisher"

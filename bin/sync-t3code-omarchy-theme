@@ -1,0 +1,494 @@
+#!/usr/bin/python3
+"""Publish the active Omarchy theme to T3 Code: palette and CSS.
+
+Omarchy renders two files into the current theme on every theme switch:
+t3code.json (the palette) and t3code.css (the look). This script fills in what
+the templates cannot know (the system font, Hyprland's rounding and borders,
+the menu and popup styling in shell.toml), puts the CSS into the palette file
+and publishes it to the directory T3 Code watches.
+
+Run by the theme-set and font-set hooks. Safe to run by hand at any time:
+
+    sync-t3code-omarchy-theme                    publish the current theme
+    sync-t3code-omarchy-theme --style too-much   switch style, then publish
+
+https://github.com/jagrat7/omarchy-t3code-theme
+"""
+
+import argparse
+import base64
+import json
+import os
+import random
+import re
+import subprocess
+import sys
+import tempfile
+import tomllib
+from pathlib import Path
+
+CURRENT_DIR = Path.home() / ".local/state/omarchy/current"
+THEME_DIR = CURRENT_DIR / "theme"
+USER_BACKGROUNDS = Path.home() / ".config/omarchy/backgrounds"
+CONFIG = Path.home() / ".config/omarchy/t3code-theme.toml"
+T3CODE_HOME = Path(os.environ.get("T3CODE_HOME") or Path.home() / ".t3")
+STATE_DIR = T3CODE_HOME / "userdata"
+TARGET = STATE_DIR / "themes/omarchy.json"
+
+CSS_PLACEHOLDER = '"{{ t3code_css }}"'
+# T3 Code rejects a theme whose CSS is longer than this.
+CSS_LIMIT = 20000
+# The wallpapers have to travel inside that CSS, so each is encoded as AVIF at
+# the first of these widths and qualities that fits in what the rest leaves
+# free. They are blurred first, so small images are enough. The header's
+# picture is shown at the sidebar's width, so it starts smaller.
+BACKGROUND_STEPS = ((960, 45), (640, 45), (640, 30), (480, 30), (320, 30))
+HEADER_STEPS = ((640, 45), (480, 40), (480, 30), (320, 30), (240, 30))
+
+# Which of the CSS template's optional parts each style keeps. The header is
+# in every style.
+STYLES = {
+    "minimal": set(),
+    "full": {"background"},
+    "too-much": {"background", "sidebar"},
+}
+DEFAULT_STYLE = "full"
+# The least the wallpaper is blurred and tinted, so text stays readable on any
+# wallpaper. A theme whose own blur or tint is stronger gets its own. The blur
+# is a Gaussian sigma in screen pixels; the tint is how opaque the theme's
+# ground is over the picture, from 0 to 1. Both can be set in CONFIG.
+MIN_BLUR = 20
+MIN_TINT = 0.75
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".bmp"}
+
+CONFIG_TEMPLATE = """\
+# T3 Code Omarchy theme: https://github.com/jagrat7/omarchy-t3code-theme
+# Apply changes with: sync-t3code-omarchy-theme
+
+# minimal:  the desktop wallpaper behind the sidebar's header
+# full:     the header, plus a random theme wallpaper behind the conversation
+# too-much: the header and conversation, plus the wallpaper down the sidebar
+style = "{style}"
+
+# Readability floors for the wallpaper. The theme's own blur (Hyprland) or
+# tint (the shell's menu scrim) is used instead when it is stronger.
+# min_blur = 20     # Gaussian sigma, in screen pixels
+# min_tint = 0.75   # opacity of the theme background over the picture, 0 to 1
+"""
+
+
+def warn(message):
+    print(f"T3 Code theme: {message}", file=sys.stderr)
+
+
+def read_toml(path):
+    try:
+        return tomllib.loads(path.read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
+def load_settings():
+    config = read_toml(CONFIG)
+    style = config.get("style", DEFAULT_STYLE)
+    if style not in STYLES:
+        warn(f'unknown style "{style}" in {CONFIG}; using "{DEFAULT_STYLE}".')
+        style = DEFAULT_STYLE
+
+    def number(key, fallback, low, high):
+        value = config.get(key, fallback)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            warn(f"{key} in {CONFIG} is not a number; using {fallback}.")
+            return fallback
+        return min(max(float(value), low), high)
+
+    return {
+        "style": style,
+        "min_blur": number("min_blur", MIN_BLUR, 0, 200),
+        "min_tint": number("min_tint", MIN_TINT, 0, 1),
+    }
+
+
+def save_style(style):
+    """Record the style in CONFIG, keeping anything else the file says."""
+    try:
+        text = CONFIG.read_text()
+    except OSError:
+        text = None
+    line = f'style = "{style}"'
+    if text is None:
+        text = CONFIG_TEMPLATE.format(style=style)
+    elif re.search(r"(?m)^\s*style\s*=.*$", text):
+        text = re.sub(r"(?m)^\s*style\s*=.*$", line, text, count=1)
+    else:
+        text = f"{line}\n{text}"
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text(text)
+
+
+def command_output(*command):
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=3)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def hyprland_option(name, fallback):
+    try:
+        option = json.loads(command_output("hyprctl", "-j", "getoption", name))
+    except ValueError:
+        return fallback
+    for kind in ("int", "float", "bool"):
+        if isinstance(option, dict) and kind in option:
+            return option[kind]
+    return fallback
+
+
+def hyprland_blur():
+    """The blur Hyprland puts behind translucent windows, which the selected theme sets.
+
+    Returns None when blur is off. The radius is in screen pixels: Hyprland's
+    blur reaches size * 2^passes pixels, about twice a Gaussian's sigma.
+    Vibrancy and noise are not reproduced.
+    """
+    if not hyprland_option("decoration:blur:enabled", True):
+        return None
+    size = hyprland_option("decoration:blur:size", 8)
+    passes = hyprland_option("decoration:blur:passes", 1)
+    return {
+        "sigma": size * 2**passes / 2,
+        "brightness": float(hyprland_option("decoration:blur:brightness", 0.8172)),
+        "contrast": float(hyprland_option("decoration:blur:contrast", 0.8916)),
+    }
+
+
+def screen_width():
+    """Logical width of the focused monitor, where the wallpaper is seen at full size."""
+    try:
+        monitors = json.loads(command_output("hyprctl", "-j", "monitors all"))
+        # Hyprland's FALLBACK output stands in while every screen is off.
+        monitors = [m for m in monitors if m.get("name") != "FALLBACK"]
+        monitor = next((m for m in monitors if m.get("focused")), None)
+        monitor = monitor or max(monitors, key=lambda m: m["width"] / (m.get("scale") or 1))
+        return monitor["width"] / (monitor.get("scale") or 1)
+    except (ValueError, KeyError, IndexError, TypeError):
+        return 1920
+
+
+def css_color(value, alpha=1.0):
+    """One Hyprland or hex colour (rgb(ed9998), rgba(665f5899), #ed9998, 0xffed9998) as CSS."""
+    value = value.strip()
+    digits = None
+    if match := re.fullmatch(r"#([0-9a-fA-F]{6})([0-9a-fA-F]{2})?", value):
+        digits = match.group(1) + (match.group(2) or "ff")
+    elif match := re.fullmatch(r"rgba?\(([0-9a-fA-F]{6})([0-9a-fA-F]{2})?\)", value, re.I):
+        digits = match.group(1) + (match.group(2) or "ff")
+    elif match := re.fullmatch(r"0x([0-9a-fA-F]{2})([0-9a-fA-F]{6})", value):
+        digits = match.group(2) + match.group(1)
+    if digits is None:
+        return None
+
+    red, green, blue, opacity = (int(digits[i : i + 2], 16) for i in (0, 2, 4, 6))
+    opacity = opacity / 255 * alpha
+    if opacity >= 0.999:
+        return f"#{digits[:6]}"
+    return f"rgb({red} {green} {blue} / {opacity:.3g})"
+
+
+def parse_border(spec, alpha=1.0):
+    """A solid colour or a Hyprland gradient ("rgb(a) rgb(b) 45deg") as CSS colours and an angle."""
+    colors, angle = [], 0.0
+    for part in str(spec).split():
+        if match := re.fullmatch(r"(-?[0-9.]+)deg", part):
+            angle = float(match.group(1))
+        elif (color := css_color(part, alpha)) is not None:
+            colors.append(color)
+    return colors, angle
+
+
+def css_gradient(colors, angle):
+    if len(colors) == 1:
+        colors = colors * 2
+    # Hyprland measures the angle from left-to-right; CSS measures it from bottom-to-top.
+    return f"linear-gradient({angle + 90:g}deg, {', '.join(colors)})"
+
+
+def border_widths(section, prefix):
+    """Top, right, bottom, left widths from a CSS-style list plus per-side overrides."""
+    raw = section.get(f"{prefix}-width", 1)
+    try:
+        parts = [float(part) for part in str(raw).split()] or [1.0]
+    except ValueError:
+        parts = [1.0]
+    if len(parts) == 1:
+        sides = parts * 4
+    elif len(parts) == 2:
+        sides = [parts[0], parts[1], parts[0], parts[1]]
+    elif len(parts) == 3:
+        sides = [parts[0], parts[1], parts[2], parts[1]]
+    else:
+        sides = parts[:4]
+    for index, side in enumerate(("top", "right", "bottom", "left")):
+        override = section.get(f"{prefix}-width-{side}")
+        if isinstance(override, (int, float)):
+            sides[index] = float(override)
+    return sides
+
+
+def is_image(path):
+    return path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+
+
+def theme_wallpapers():
+    """The active theme's still wallpapers, the user's own included, in Omarchy's order."""
+    try:
+        name = (CURRENT_DIR / "theme.name").read_text().strip()
+    except OSError:
+        name = ""
+    folders = [THEME_DIR / "backgrounds"]
+    if name:
+        folders.insert(0, USER_BACKGROUNDS / name)
+    images = []
+    for folder in folders:
+        if folder.is_dir():
+            images += [path for path in folder.iterdir() if is_image(path)]
+    return sorted(images, key=str)
+
+
+def desktop_wallpaper():
+    """The wallpaper on the desktop, or the theme's first when that is a video."""
+    current = (CURRENT_DIR / "background").resolve()
+    if is_image(current):
+        return current
+    wallpapers = theme_wallpapers()
+    return wallpapers[0] if wallpapers else None
+
+
+def random_wallpaper():
+    wallpapers = theme_wallpapers()
+    return random.choice(wallpapers) if wallpapers else desktop_wallpaper()
+
+
+def wallpaper_css(source, budget, steps, min_blur):
+    """The wallpaper as a CSS image of at most `budget` characters, or "none"."""
+    if source is None:
+        return "none"
+    blur = hyprland_blur()
+    sigma = max(blur["sigma"] if blur else 0, min_blur)
+    screen = screen_width()
+    for width, quality in steps:
+        # [0]: the first frame, should the file be animated.
+        command = ["magick", f"{source}[0]", "-resize", f"{width}x>", "-strip"]
+        # The blur is given in screen pixels, so scale it to this image.
+        if sigma > 0:
+            command += ["-blur", f"0x{sigma * width / screen:.3g}"]
+        if blur:
+            # Hyprland's blur also shifts contrast and brightness; keep the theme's.
+            command += ["-function", "Polynomial", f"{blur['contrast']:g},{0.5 * (1 - blur['contrast']):g}"]
+            command += ["-evaluate", "Multiply", f"{blur['brightness']:g}"]
+        command += ["-quality", str(quality), "avif:-"]
+        try:
+            result = subprocess.run(command, capture_output=True, timeout=20)
+        except (OSError, subprocess.TimeoutExpired):
+            return "none"
+        if result.returncode != 0 or not result.stdout:
+            return "none"
+        image = f'url("data:image/avif;base64,{base64.b64encode(result.stdout).decode()}")'
+        if len(image) <= budget:
+            return image
+    return "none"
+
+
+def omarchy_variables(settings):
+    colors = read_toml(THEME_DIR / "colors.toml")
+    shell = read_toml(THEME_DIR / "shell.toml")
+    accent = colors.get("accent", "#888888")
+    foreground = colors.get("foreground", "#ffffff")
+
+    def resolve(value, fallback):
+        """Follow a "section.key" reference into shell.toml, as the shell does."""
+        if isinstance(value, str) and re.fullmatch(r"[a-z-]+\.[a-z-]+", value):
+            section, key = value.split(".")
+            value = shell.get(section, {}).get(key)
+        return value if isinstance(value, str) and value else fallback
+
+    def border(section_name, key, fallback):
+        section = shell.get(section_name, {})
+        alpha = section.get(f"{key}-alpha", 1.0)
+        alpha = float(alpha) if isinstance(alpha, (int, float)) else 1.0
+        parsed, angle = parse_border(resolve(section.get(key), fallback), alpha)
+        if not parsed:
+            parsed, angle = parse_border(fallback, alpha)
+        return parsed or [accent], angle
+
+    active_spec = colors.get("hyprland_active_border", accent)
+    active, active_angle = parse_border(active_spec)
+    active = active or [accent]
+    inactive = css_color(str(colors.get("hyprland_inactive_border", ""))) or colors.get("muted", "#888888")
+
+    popup, popup_angle = border("popups", "border", active_spec)
+    tooltip, tooltip_angle = border("tooltip", "border", foreground)
+    row, row_angle = border("menu", "selected-border", foreground)
+
+    menu = shell.get("menu", {})
+    row_fill_alpha = menu.get("selected-background-alpha", 0.08)
+    row_fill = css_color(str(menu.get("selected-background", foreground)), float(row_fill_alpha))
+    top, right, bottom, left = border_widths(menu, "selected-border")
+
+    # The theme's tint is the scrim the shell lays over the desktop behind its
+    # menu and launcher. It is used when it is heavier than the minimum.
+    scrim = menu
+    for name in ("menu", "launcher"):
+        section = shell.get(name, {})
+        alpha = section.get("scrim-alpha")
+        if isinstance(alpha, (int, float)) and alpha > scrim.get("scrim-alpha", 0):
+            scrim = section
+    tint_alpha = scrim.get("scrim-alpha", 0)
+    tint_alpha = float(tint_alpha) if isinstance(tint_alpha, (int, float)) else 0.0
+    min_tint = settings["min_tint"]
+    tint_alpha = min(max(tint_alpha, min_tint), 1.0)
+    background = colors.get("background", "#000000")
+    tint_color = scrim.get("scrim", background) if tint_alpha > min_tint else background
+    tint = css_color(str(tint_color), tint_alpha) or css_color(background, tint_alpha) or "transparent"
+
+    font = command_output("fc-match", "monospace", "-f", "%{family}").split(",")[0].strip()
+    font = json.dumps(font) if font else "monospace"
+
+    return {
+        "font": font,
+        "radius": f"{hyprland_option('decoration:rounding', 0)}px",
+        "border-width": f"{hyprland_option('general:border_size', 2)}px",
+        "tint": tint,
+        "active-border": css_gradient(active, active_angle),
+        "inactive-border": inactive,
+        "popup-border": css_gradient(popup, popup_angle),
+        "tooltip-border": css_gradient(tooltip, tooltip_angle),
+        "row-fill": row_fill or "transparent",
+        "row-text": menu.get("selected-text", accent),
+        "row-border": css_gradient(row, row_angle),
+        "row-edge-top": row[0],
+        "row-edge-bottom": row[-1],
+        "row-border-top": f"{top:g}px",
+        "row-border-right": f"{right:g}px",
+        "row-border-bottom": f"{bottom:g}px",
+        "row-border-left": f"{left:g}px",
+    }
+
+
+def keep_blocks(css, keep):
+    """Drop each /* @name ... */ or /* @part name ... */ block, up to /* @end */, not in `keep`."""
+    block = re.compile(r"/\* @(?:part )?([\w-]+)(?:[^*]|\*(?!/))*\*/(.*?)/\* @end \*/", re.S)
+    return block.sub(lambda match: match.group(2) if match.group(1) in keep else "", css)
+
+
+def build_css(settings):
+    """The rendered CSS with the Omarchy values in front, or None when it cannot be used."""
+    try:
+        css = (THEME_DIR / "t3code.css").read_text()
+    except OSError:
+        return None
+
+    variables = omarchy_variables(settings)
+    keep = set(STYLES[settings["style"]])
+    if variables["radius"] == "0px":
+        keep.add("square")
+    css = keep_blocks(css, keep)
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    css = re.sub(r"\s*\n\s*", "\n", css).strip()
+
+    if "{{" in css:
+        warn("t3code.css has unresolved colors; publishing the palette without CSS.")
+        return None
+
+    def with_variables():
+        declarations = "".join(f"--omarchy-{name}: {value};\n" for name, value in variables.items())
+        return f":root {{\n{declarations}}}\n{css}"
+
+    # The header always shows the desktop wallpaper; the conversation a random
+    # one. Each is encoded only if the style uses it, and the header's picture
+    # may take at most half of the room left when both are needed.
+    wants_header = "var(--omarchy-header-wallpaper)" in css
+    wants_background = "var(--omarchy-wallpaper)" in css
+    variables["header-wallpaper"] = variables["wallpaper"] = "none"
+    if wants_header:
+        free = CSS_LIMIT - len(with_variables())
+        share = free // 2 if wants_background else free
+        variables["header-wallpaper"] = wallpaper_css(desktop_wallpaper(), share, HEADER_STEPS, settings["min_blur"])
+    if wants_background:
+        free = CSS_LIMIT - len(with_variables())
+        variables["wallpaper"] = wallpaper_css(random_wallpaper(), free, BACKGROUND_STEPS, settings["min_blur"])
+    css = with_variables()
+    if len(css) > CSS_LIMIT:
+        warn(f"the CSS is {len(css)} characters, over T3 Code's {CSS_LIMIT} limit; publishing the palette without it.")
+        return None
+    return css
+
+
+def build_theme(settings):
+    source = (THEME_DIR / "t3code.json").read_text()
+    css = build_css(settings)
+
+    # The user template leaves this placeholder for the CSS. Omarchy's own
+    # publisher sees it as unresolved and stands aside, so the theme reaches
+    # T3 Code once, complete, rather than as a palette followed by its CSS.
+    source = source.replace(CSS_PLACEHOLDER, json.dumps(css or ""))
+    if "{{" in source:
+        warn("t3code.json has unresolved colors; leaving the previous theme in place.")
+        return None
+
+    theme = json.loads(source)
+    if css and not theme.get("css"):
+        theme["css"] = css
+    if not theme.get("css"):
+        theme.pop("css", None)
+    return theme
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Publish the active Omarchy theme to T3 Code.")
+    parser.add_argument(
+        "--style",
+        choices=list(STYLES),
+        help="switch style and remember it: minimal (header), full (header and "
+        "conversation background) or too-much (the sidebar as well)",
+    )
+    args = parser.parse_args()
+    if args.style:
+        try:
+            save_style(args.style)
+        except OSError as error:
+            warn(f"could not save the style: {error}")
+            return 1
+
+    # Only follow an install that already exists.
+    if not (THEME_DIR / "t3code.json").is_file() or not STATE_DIR.is_dir():
+        if args.style:
+            warn("T3 Code or the Omarchy theme files are missing; nothing was published.")
+        return 0
+
+    try:
+        theme = build_theme(load_settings())
+    except (OSError, ValueError) as error:
+        warn(f"could not build the theme: {error}")
+        return 1
+    if theme is None:
+        return 0
+
+    # T3 Code watches this file, so the write has to be atomic.
+    TARGET.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(prefix=f"{TARGET.name}.", dir=TARGET.parent)
+    try:
+        with os.fdopen(handle, "w") as file:
+            json.dump(theme, file, indent=2)
+            file.write("\n")
+        os.replace(temporary, TARGET)
+    except OSError as error:
+        Path(temporary).unlink(missing_ok=True)
+        warn(f"could not publish the theme: {error}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
