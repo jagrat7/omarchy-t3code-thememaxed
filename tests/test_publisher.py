@@ -1,4 +1,4 @@
-"""Tests for bin/t3code-omarchy-theme. Run: python3 -m unittest discover -s tests -v"""
+"""Tests for bin/t3code-omarchy-plus. Run: python3 -m unittest discover -s tests -v"""
 
 import importlib.machinery
 import importlib.util
@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
-loader = importlib.machinery.SourceFileLoader("publisher", str(ROOT / "bin/t3code-omarchy-theme"))
+loader = importlib.machinery.SourceFileLoader("publisher", str(ROOT / "bin/t3code-omarchy-plus"))
 spec = importlib.util.spec_from_loader("publisher", loader)
 publisher = importlib.util.module_from_spec(spec)
 loader.exec_module(publisher)

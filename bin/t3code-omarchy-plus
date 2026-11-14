@@ -11,10 +11,10 @@ Omarchy's own theme is left as it is.
 Run by the plugin's service (or the hooks of the standalone install) whenever
 the theme, font, wallpaper or config changes. Safe to run by hand:
 
-    t3code-omarchy-theme                    publish the current theme
-    t3code-omarchy-theme --style too-much   switch style, then publish
+    t3code-omarchy-plus                    publish the current theme
+    t3code-omarchy-plus --style too-much   switch style, then publish
 
-https://github.com/jagrat7/omarchy-t3code-theme
+https://github.com/jagrat7/omarchy-t3code-plus
 """
 
 import argparse
@@ -36,14 +36,14 @@ CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
 CURRENT_DIR = STATE_HOME / "omarchy/current"
 THEME_DIR = CURRENT_DIR / "theme"
 USER_BACKGROUNDS = CONFIG_HOME / "omarchy/backgrounds"
-CONFIG = CONFIG_HOME / "omarchy-t3code-theme/config.toml"
+CONFIG = CONFIG_HOME / "omarchy-t3code-plus/config.toml"
 TEMPLATE = Path(__file__).resolve().parent.parent / "themed/t3code.css.tpl"
 T3CODE_HOME = Path(os.environ.get("T3CODE_HOME") or HOME / ".t3")
 STATE_DIR = T3CODE_HOME / "userdata"
 # A theme of its own, beside Omarchy's "omarchy", which Omarchy keeps writing.
 TARGET = STATE_DIR / "themes/omarchy-plus.json"
 THEME_NAME = "Omarchy+"
-LOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "t3code-omarchy-theme.lock"
+LOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "t3code-omarchy-plus.lock"
 # T3 Code rejects a theme whose CSS is longer than this.
 CSS_LIMIT = 20000
 # The wallpapers have to travel inside that CSS, so each is encoded as AVIF at
@@ -70,7 +70,7 @@ MIN_TINT = 0.75
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".bmp"}
 
 CONFIG_TEMPLATE = """\
-# Omarchy+ for T3 Code: https://github.com/jagrat7/omarchy-t3code-theme
+# Omarchy+ for T3 Code: https://github.com/jagrat7/omarchy-t3code-plus
 # The plugin applies changes to this file as soon as it is saved.
 
 # minimal:  the desktop wallpaper behind the sidebar's header

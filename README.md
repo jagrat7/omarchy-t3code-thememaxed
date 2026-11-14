@@ -1,9 +1,9 @@
-<h1 align="center">T3 Code Theme</h1>
+<h1 align="center">Omarchy+ for T3 Code</h1>
 
 <p align="center">
-  <a href="https://github.com/jagrat7/omarchy-t3code-theme/commits/main"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-t3code-theme?style=flat-square&label=version&labelColor=1c1d25&color=34c8cb" alt="Version"></a>
+  <a href="https://github.com/jagrat7/omarchy-t3code-plus/commits/main"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-t3code-plus?style=flat-square&label=version&labelColor=1c1d25&color=34c8cb" alt="Version"></a>
   <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/Omarchy-Quattro-34c8cb?style=flat-square&labelColor=1c1d25&logo=archlinux&logoColor=white" alt="Omarchy Quattro"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/jagrat7/omarchy-t3code-theme?style=flat-square&labelColor=1c1d25&color=34c8cb" alt="MIT license"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/jagrat7/omarchy-t3code-plus?style=flat-square&labelColor=1c1d25&color=34c8cb" alt="MIT license"></a>
 </p>
 
 An Omarchy plugin that gives [T3 Code](https://github.com/pingdotgg/t3code) the
@@ -19,7 +19,7 @@ built on the same palette.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/jagrat7/omarchy-t3code-theme.git --enable
+omarchy plugin add https://github.com/jagrat7/omarchy-t3code-plus.git --enable
 ```
 
 Then in T3 Code choose **Settings > Appearance > Omarchy+**. That's all: the
@@ -41,7 +41,7 @@ conversation gets a random one of the theme's wallpapers each time the theme
 is republished. Every picture is blurred and tinted enough to keep text
 readable, more if the theme's own blur or scrim is stronger.
 
-Pick a style in `~/.config/omarchy-t3code-theme/config.toml`. The plugin
+Pick a style in `~/.config/omarchy-t3code-plus/config.toml`. The plugin
 applies the file as soon as it is saved:
 
 ```toml
@@ -53,7 +53,7 @@ min_tint = 0.75    # least opacity of the theme background over the picture
 Or from a terminal, which also deals a new random wallpaper:
 
 ```bash
-~/.config/omarchy/plugins/io.github.jagrat7.omarchy-t3code-theme/bin/t3code-omarchy-theme --style too-much
+~/.config/omarchy/plugins/io.github.jagrat7.omarchy-t3code-plus/bin/t3code-omarchy-plus --style too-much
 ```
 
 ## What changes
@@ -73,12 +73,12 @@ Or from a terminal, which also deals a new random wallpaper:
 ## Update and remove
 
 ```bash
-omarchy plugin update io.github.jagrat7.omarchy-t3code-theme
-omarchy plugin remove io.github.jagrat7.omarchy-t3code-theme
+omarchy plugin update io.github.jagrat7.omarchy-t3code-plus
+omarchy plugin remove io.github.jagrat7.omarchy-t3code-plus
 ```
 
 After removing it, choose **Omarchy** in T3 Code again. The settings stay in
-`~/.config/omarchy-t3code-theme/` and the last published theme in
+`~/.config/omarchy-t3code-plus/` and the last published theme in
 `~/.t3/userdata/themes/omarchy-plus.json`; delete them if you like.
 
 ## Without the plugin
@@ -87,13 +87,13 @@ The same publisher can run from Omarchy hooks instead of the shell. Use one
 or the other, not both.
 
 ```bash
-git clone https://github.com/jagrat7/omarchy-t3code-theme.git
-bash omarchy-t3code-theme/scripts/install.sh full    # or minimal, or too-much
+git clone https://github.com/jagrat7/omarchy-t3code-plus.git
+bash omarchy-t3code-plus/scripts/install.sh full    # or minimal, or too-much
 ```
 
-This puts `t3code-omarchy-theme` in `~/.local/bin` and adds `theme-set` and
+This puts `t3code-omarchy-plus` in `~/.local/bin` and adds `theme-set` and
 `font-set` hooks. Omarchy has no hook for a new wallpaper, so after
-`omarchy theme bg next` run `t3code-omarchy-theme` yourself. Remove it with
+`omarchy theme bg next` run `t3code-omarchy-plus` yourself. Remove it with
 `bash scripts/uninstall.sh`, which moves its files to
 `~/.config/omarchy/backups/`.
 
@@ -112,7 +112,7 @@ Tested with Omarchy 4.5 and T3 Code 0.1.10 (nightly, November 2026).
 ## How it works
 
 `Service.qml` is a `service` plugin, so one copy runs in the shell. It runs
-[`bin/t3code-omarchy-theme`](bin/t3code-omarchy-theme) when it starts and
+[`bin/t3code-omarchy-plus`](bin/t3code-omarchy-plus) when it starts and
 again when `omarchy theme set` writes `theme.generation`, when `omarchy font
 set` rewrites `fonts.conf`, when the wallpaper link in
 `~/.local/state/omarchy/current/` changes, and when the config is saved.
@@ -160,11 +160,11 @@ omarchy plugin validate .
 Symlink a clone into the plugin directory to work on it live:
 
 ```bash
-git clone https://github.com/jagrat7/omarchy-t3code-theme.git
-ln -s "$PWD/omarchy-t3code-theme" \
-  "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/io.github.jagrat7.omarchy-t3code-theme"
+git clone https://github.com/jagrat7/omarchy-t3code-plus.git
+ln -s "$PWD/omarchy-t3code-plus" \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/io.github.jagrat7.omarchy-t3code-plus"
 omarchy-shell shell rescanPlugins
-omarchy plugin enable io.github.jagrat7.omarchy-t3code-theme
+omarchy plugin enable io.github.jagrat7.omarchy-t3code-plus
 ```
 
 ## License

@@ -17,7 +17,7 @@ Item {
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || home + "/.local/state"
   readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || home + "/.config"
   readonly property string currentDir: stateHome + "/omarchy/current"
-  readonly property string publisher: String(Qt.resolvedUrl("bin/t3code-omarchy-theme")).replace(/^file:\/\//, "")
+  readonly property string publisher: String(Qt.resolvedUrl("bin/t3code-omarchy-plus")).replace(/^file:\/\//, "")
 
   property bool again: false
 
@@ -46,7 +46,7 @@ Item {
     command: [root.publisher]
     stderr: StdioCollector {
       onStreamFinished: {
-        if (text.trim() !== "") console.warn("[t3code-omarchy-theme] " + text.trim())
+        if (text.trim() !== "") console.warn("[t3code-omarchy-plus] " + text.trim())
       }
     }
     onExited: {
@@ -92,7 +92,7 @@ Item {
     id: configWatch
     sourceComponent: Item {
       FileView {
-        path: root.configHome + "/omarchy-t3code-theme/config.toml"
+        path: root.configHome + "/omarchy-t3code-plus/config.toml"
         watchChanges: true
         printErrors: false
         onLoadFailed: root.configMissing = true
