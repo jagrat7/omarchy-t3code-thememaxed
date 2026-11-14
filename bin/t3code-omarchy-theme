@@ -1,22 +1,25 @@
 #!/usr/bin/python3
-"""Publish the active Omarchy theme to T3 Code: palette and CSS.
+"""Publish the "Omarchy+" theme to T3 Code: Omarchy's palette plus the look.
 
-Omarchy renders two files into the current theme on every theme switch:
-t3code.json (the palette) and t3code.css (the look). This script fills in what
-the templates cannot know (the system font, Hyprland's rounding and borders,
-the menu and popup styling in shell.toml), puts the CSS into the palette file
-and publishes it to the directory T3 Code watches.
+Omarchy already renders T3 Code's palette into the current theme (t3code.json)
+and publishes it as T3 Code's "Omarchy" theme. This takes that palette, adds
+CSS rendered from themed/t3code.css.tpl with the theme's colours, the system
+font, Hyprland's rounding and borders, the shell's popup and menu styling and
+the wallpapers, and publishes the result as a second theme, "Omarchy+".
+Omarchy's own theme is left as it is.
 
-Run by the theme-set and font-set hooks. Safe to run by hand at any time:
+Run by the plugin's service (or the hooks of the standalone install) whenever
+the theme, font, wallpaper or config changes. Safe to run by hand:
 
-    sync-t3code-omarchy-theme                    publish the current theme
-    sync-t3code-omarchy-theme --style too-much   switch style, then publish
+    t3code-omarchy-theme                    publish the current theme
+    t3code-omarchy-theme --style too-much   switch style, then publish
 
 https://github.com/jagrat7/omarchy-t3code-theme
 """
 
 import argparse
 import base64
+import fcntl
 import json
 import os
 import random
@@ -27,15 +30,20 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-CURRENT_DIR = Path.home() / ".local/state/omarchy/current"
+HOME = Path.home()
+STATE_HOME = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state")
+CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
+CURRENT_DIR = STATE_HOME / "omarchy/current"
 THEME_DIR = CURRENT_DIR / "theme"
-USER_BACKGROUNDS = Path.home() / ".config/omarchy/backgrounds"
-CONFIG = Path.home() / ".config/omarchy/t3code-theme.toml"
-T3CODE_HOME = Path(os.environ.get("T3CODE_HOME") or Path.home() / ".t3")
+USER_BACKGROUNDS = CONFIG_HOME / "omarchy/backgrounds"
+CONFIG = CONFIG_HOME / "omarchy-t3code-theme/config.toml"
+TEMPLATE = Path(__file__).resolve().parent.parent / "themed/t3code.css.tpl"
+T3CODE_HOME = Path(os.environ.get("T3CODE_HOME") or HOME / ".t3")
 STATE_DIR = T3CODE_HOME / "userdata"
-TARGET = STATE_DIR / "themes/omarchy.json"
-
-CSS_PLACEHOLDER = '"{{ t3code_css }}"'
+# A theme of its own, beside Omarchy's "omarchy", which Omarchy keeps writing.
+TARGET = STATE_DIR / "themes/omarchy-plus.json"
+THEME_NAME = "Omarchy+"
+LOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "t3code-omarchy-theme.lock"
 # T3 Code rejects a theme whose CSS is longer than this.
 CSS_LIMIT = 20000
 # The wallpapers have to travel inside that CSS, so each is encoded as AVIF at
@@ -62,8 +70,8 @@ MIN_TINT = 0.75
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".bmp"}
 
 CONFIG_TEMPLATE = """\
-# T3 Code Omarchy theme: https://github.com/jagrat7/omarchy-t3code-theme
-# Apply changes with: sync-t3code-omarchy-theme
+# Omarchy+ for T3 Code: https://github.com/jagrat7/omarchy-t3code-theme
+# The plugin applies changes to this file as soon as it is saved.
 
 # minimal:  the desktop wallpaper behind the sidebar's header
 # full:     the header, plus a random theme wallpaper behind the conversation
@@ -376,6 +384,26 @@ def omarchy_variables(settings):
     }
 
 
+def theme_values():
+    """The theme's template values, from the resolver Omarchy's own templates use."""
+    output = command_output("omarchy-theme-color", "--file", str(THEME_DIR / "colors.toml"), "--all")
+    values = {}
+    for line in output.splitlines():
+        key, _, value = line.partition("\t")
+        if not key or not _:
+            continue
+        # The same three forms Omarchy offers: {{ key }}, {{ key_strip }}, {{ key_rgb }}.
+        values[key] = value
+        values[f"{key}_strip"] = value.removeprefix("#")
+        if re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
+            values[f"{key}_rgb"] = ",".join(str(int(value[i : i + 2], 16)) for i in (1, 3, 5))
+    return values
+
+
+def render_template(text, values):
+    return re.sub(r"\{\{\s*(\w+)\s*\}\}", lambda match: values.get(match.group(1), match.group(0)), text)
+
+
 def keep_blocks(css, keep):
     """Drop each /* @name ... */ or /* @part name ... */ block, up to /* @end */, not in `keep`."""
     block = re.compile(r"/\* @(?:part )?([\w-]+)(?:[^*]|\*(?!/))*\*/(.*?)/\* @end \*/", re.S)
@@ -383,10 +411,11 @@ def keep_blocks(css, keep):
 
 
 def build_css(settings):
-    """The rendered CSS with the Omarchy values in front, or None when it cannot be used."""
+    """The CSS with the theme's colours and the Omarchy values in, or None when it cannot be used."""
     try:
-        css = (THEME_DIR / "t3code.css").read_text()
-    except OSError:
+        css = render_template(TEMPLATE.read_text(), theme_values())
+    except OSError as error:
+        warn(f"could not read the CSS template: {error}")
         return None
 
     variables = omarchy_variables(settings)
@@ -397,8 +426,8 @@ def build_css(settings):
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
     css = re.sub(r"\s*\n\s*", "\n", css).strip()
 
-    if "{{" in css:
-        warn("t3code.css has unresolved colors; publishing the palette without CSS.")
+    if unresolved := sorted(set(re.findall(r"\{\{\s*\w+\s*\}\}", css))):
+        warn(f"the theme has no value for {', '.join(unresolved)}; publishing the palette without CSS.")
         return None
 
     def with_variables():
@@ -426,54 +455,29 @@ def build_css(settings):
 
 
 def build_theme(settings):
+    """Omarchy's palette for T3 Code, renamed, with the CSS added; None to leave the last one."""
+    # Omarchy renders this from its t3code.json.tpl (or the theme ships it).
     source = (THEME_DIR / "t3code.json").read_text()
-    css = build_css(settings)
-
-    # The user template leaves this placeholder for the CSS. Omarchy's own
-    # publisher sees it as unresolved and stands aside, so the theme reaches
-    # T3 Code once, complete, rather than as a palette followed by its CSS.
-    source = source.replace(CSS_PLACEHOLDER, json.dumps(css or ""))
     if "{{" in source:
-        warn("t3code.json has unresolved colors; leaving the previous theme in place.")
+        warn("Omarchy's t3code.json has unresolved colors; leaving the previous theme in place.")
         return None
-
     theme = json.loads(source)
-    if css and not theme.get("css"):
+    if not isinstance(theme, dict):
+        raise ValueError("t3code.json is not a theme object")
+    theme["name"] = THEME_NAME
+    theme.pop("css", None)
+    if css := build_css(settings):
         theme["css"] = css
-    if not theme.get("css"):
-        theme.pop("css", None)
     return theme
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Publish the active Omarchy theme to T3 Code.")
-    parser.add_argument(
-        "--style",
-        choices=list(STYLES),
-        help="switch style and remember it: minimal (header), full (header and "
-        "conversation background) or too-much (the sidebar as well)",
-    )
-    args = parser.parse_args()
-    if args.style:
-        try:
-            save_style(args.style)
-        except OSError as error:
-            warn(f"could not save the style: {error}")
-            return 1
-
+def publish(settings):
     # Only follow an install that already exists.
     if not (THEME_DIR / "t3code.json").is_file() or not STATE_DIR.is_dir():
-        if args.style:
-            warn("T3 Code or the Omarchy theme files are missing; nothing was published.")
-        return 0
-
-    try:
-        theme = build_theme(load_settings())
-    except (OSError, ValueError) as error:
-        warn(f"could not build the theme: {error}")
-        return 1
+        return False
+    theme = build_theme(settings)
     if theme is None:
-        return 0
+        return True
 
     # T3 Code watches this file, so the write has to be atomic.
     TARGET.parent.mkdir(parents=True, exist_ok=True)
@@ -483,10 +487,47 @@ def main():
             json.dump(theme, file, indent=2)
             file.write("\n")
         os.replace(temporary, TARGET)
-    except OSError as error:
+    except BaseException:
         Path(temporary).unlink(missing_ok=True)
+        raise
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Publish the "Omarchy+" theme to T3 Code.')
+    parser.add_argument(
+        "--style",
+        choices=list(STYLES),
+        help="switch style and remember it: minimal (header), full (header and "
+        "conversation background) or too-much (the sidebar as well)",
+    )
+    args = parser.parse_args()
+    # A first run writes the config with its defaults, so there is a file to edit.
+    if args.style or not CONFIG.exists():
+        try:
+            save_style(args.style or DEFAULT_STYLE)
+        except OSError as error:
+            warn(f"could not save the config: {error}")
+            if args.style:
+                return 1
+
+    # The plugin and a hook can fire together on a theme switch; take turns.
+    try:
+        LOCK.parent.mkdir(parents=True, exist_ok=True)
+        lock = open(LOCK, "w")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+    except OSError:
+        lock = None
+
+    try:
+        if not publish(load_settings()) and args.style:
+            warn("T3 Code or Omarchy's T3 Code palette is missing; nothing was published.")
+    except (OSError, ValueError) as error:
         warn(f"could not publish the theme: {error}")
         return 1
+    finally:
+        if lock:
+            lock.close()
     return 0
 
 

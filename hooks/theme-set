@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# Publishes the active Omarchy theme, with its CSS, to T3 Code. Installed as
-# 05-sync-t3code-omarchy-theme so it runs before slower hooks and T3 Code
-# changes with the rest of the desktop.
+# Republishes T3 Code's Omarchy+ theme after a theme change. Installed by
+# scripts/install.sh; the plugin does this itself and needs no hooks.
 # https://github.com/jagrat7/omarchy-t3code-theme
-publisher="$HOME/.local/bin/sync-t3code-omarchy-theme"
-[[ -x $publisher ]] || exit 0
-exec "$publisher"
+command="$HOME/.local/bin/t3code-omarchy-theme"
+[[ -x $command ]] || exit 0
+exec "$command"

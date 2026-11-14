@@ -1,9 +1,10 @@
 /* T3 Code styled after the Omarchy shell.
 
-   Omarchy fills in the colour tokens for the active theme on every theme
-   switch. ~/.local/bin/sync-t3code-omarchy-theme then supplies the --omarchy-*
-   values (system font, Hyprland rounding and borders, the menu and popup
-   styling from shell.toml) and publishes the result to T3 Code.
+   bin/t3code-omarchy-theme fills in the {{ tokens }} with the active theme's
+   values, the same ones Omarchy's own templates get (omarchy-theme-color),
+   supplies the --omarchy-* values (system font, Hyprland rounding and
+   borders, the menu and popup styling from shell.toml, the wallpapers) and
+   publishes the result to T3 Code as the "Omarchy+" theme.
 
    https://github.com/jagrat7/omarchy-t3code-theme */
 

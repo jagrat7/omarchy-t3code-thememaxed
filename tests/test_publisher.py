@@ -1,0 +1,144 @@
+"""Tests for bin/t3code-omarchy-theme. Run: python3 -m unittest discover -s tests -v"""
+
+import importlib.machinery
+import importlib.util
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parent.parent
+loader = importlib.machinery.SourceFileLoader("publisher", str(ROOT / "bin/t3code-omarchy-theme"))
+spec = importlib.util.spec_from_loader("publisher", loader)
+publisher = importlib.util.module_from_spec(spec)
+loader.exec_module(publisher)
+
+TEMPLATE = (ROOT / "themed/t3code.css.tpl").read_text()
+
+
+class Blocks(unittest.TestCase):
+    def css_for(self, style, radius="4px"):
+        keep = set(publisher.STYLES[style])
+        if radius == "0px":
+            keep.add("square")
+        return publisher.keep_blocks(TEMPLATE, keep)
+
+    def test_minimal_keeps_only_the_header(self):
+        css = self.css_for("minimal")
+        self.assertIn("var(--omarchy-header-wallpaper)", css)
+        self.assertNotIn("var(--omarchy-wallpaper)", css)
+        self.assertNotIn("100% 100%, cover", css)
+
+    def test_full_adds_the_conversation(self):
+        css = self.css_for("full")
+        self.assertIn('[data-workspace-area="conversation"]', css)
+        self.assertNotIn("100% 100%, cover", css)
+
+    def test_too_much_adds_the_sidebar(self):
+        css = self.css_for("too-much")
+        self.assertIn('[data-workspace-area="conversation"]', css)
+        self.assertIn("100% 100%, cover", css)
+
+    def test_square_corners_only_without_rounding(self):
+        self.assertNotIn('[class*="rounded-xl"]', self.css_for("full", "8px"))
+        self.assertIn('[class*="rounded-xl"]', self.css_for("full", "0px"))
+
+    def test_no_markers_survive(self):
+        for style in publisher.STYLES:
+            self.assertNotIn("@end", self.css_for(style))
+
+
+class Rendering(unittest.TestCase):
+    def test_values_offer_omarchys_three_forms(self):
+        output = "accent\t#2a78b0\nmode\tdark\n"
+        with mock.patch.object(publisher, "command_output", return_value=output):
+            values = publisher.theme_values()
+        self.assertEqual(values["accent"], "#2a78b0")
+        self.assertEqual(values["accent_strip"], "2a78b0")
+        self.assertEqual(values["accent_rgb"], "42,120,176")
+        self.assertEqual(values["mode"], "dark")
+        self.assertNotIn("mode_rgb", values)
+
+    def test_unknown_tokens_are_left_for_the_check(self):
+        rendered = publisher.render_template("a {{ accent }} b {{ nope }}", {"accent": "#fff"})
+        self.assertEqual(rendered, "a #fff b {{ nope }}")
+
+    def test_every_template_token_is_a_theme_key(self):
+        tokens = set(publisher.re.findall(r"\{\{\s*(\w+)\s*\}\}", publisher.re.sub(r"/\*.*?\*/", "", TEMPLATE, flags=publisher.re.S)))
+        known = {"background", "dark_background", "foreground", "accent", "selection_background", "selection_foreground"}
+        known |= {f"{bright}{name}" for bright in ("", "bright_") for name in ("red", "green", "yellow", "blue", "magenta", "cyan")}
+        known.add("orange")
+        self.assertLessEqual(tokens, known)
+
+
+class Colors(unittest.TestCase):
+    def test_hyprland_and_hex_forms(self):
+        self.assertEqual(publisher.css_color("rgb(ed9998)"), "#ed9998")
+        self.assertEqual(publisher.css_color("rgba(665f5899)"), "rgb(102 95 88 / 0.6)")
+        self.assertEqual(publisher.css_color("0xffed9998"), "#ed9998")
+        self.assertEqual(publisher.css_color("#ed9998", 0.5), "rgb(237 153 152 / 0.5)")
+        self.assertIsNone(publisher.css_color("red"))
+
+    def test_gradient_angle_turns_to_css(self):
+        colors, angle = publisher.parse_border("rgb(ed9998) rgb(fbe4c5) 45deg")
+        self.assertEqual(publisher.css_gradient(colors, angle), "linear-gradient(135deg, #ed9998, #fbe4c5)")
+
+
+class Settings(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.config = Path(self.folder.name) / "config.toml"
+        patcher = mock.patch.object(publisher, "CONFIG", self.config)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.folder.cleanup)
+
+    def test_first_save_writes_the_commented_defaults(self):
+        publisher.save_style("minimal")
+        text = self.config.read_text()
+        self.assertIn('style = "minimal"', text)
+        self.assertIn("# min_blur", text)
+
+    def test_saving_keeps_the_rest_of_the_file(self):
+        self.config.write_text('style = "full"\nmin_tint = 0.9\n')
+        publisher.save_style("too-much")
+        self.assertEqual(self.config.read_text(), 'style = "too-much"\nmin_tint = 0.9\n')
+        settings = publisher.load_settings()
+        self.assertEqual(settings["style"], "too-much")
+        self.assertEqual(settings["min_tint"], 0.9)
+
+    def test_bad_values_fall_back(self):
+        self.config.write_text('style = "loud"\nmin_blur = "lots"\nmin_tint = 3\n')
+        with mock.patch.object(publisher, "warn"):
+            settings = publisher.load_settings()
+        self.assertEqual(settings["style"], publisher.DEFAULT_STYLE)
+        self.assertEqual(settings["min_blur"], publisher.MIN_BLUR)
+        self.assertEqual(settings["min_tint"], 1.0)
+
+
+class Theme(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.theme_dir = Path(self.folder.name)
+        patcher = mock.patch.object(publisher, "THEME_DIR", self.theme_dir)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_builds_on_omarchys_palette_under_its_own_name(self):
+        (self.theme_dir / "t3code.json").write_text(json.dumps({"name": "Omarchy", "canvas": "#000000"}))
+        with mock.patch.object(publisher, "build_css", return_value=":root{}"):
+            theme = publisher.build_theme({"style": "full"})
+        self.assertEqual(theme["name"], "Omarchy+")
+        self.assertEqual(theme["canvas"], "#000000")
+        self.assertEqual(theme["css"], ":root{}")
+
+    def test_leaves_the_last_theme_when_the_palette_is_unresolved(self):
+        (self.theme_dir / "t3code.json").write_text('{"name": "{{ accent }}"}')
+        with mock.patch.object(publisher, "warn"):
+            self.assertIsNone(publisher.build_theme({"style": "full"}))
+
+
+if __name__ == "__main__":
+    unittest.main()

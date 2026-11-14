@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.jagrat7.omarchy-t3code-theme",
+  "name": "T3 Code Theme",
+  "version": "1.0.0",
+  "author": "jagrat7",
+  "license": "MIT",
+  "description": "Gives T3 Code the Omarchy look: the system font, Hyprland's corners and borders, the shell's menus and the theme's wallpaper, kept in step with every theme, font and wallpaper change.",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}
