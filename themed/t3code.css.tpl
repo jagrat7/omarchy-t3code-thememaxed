@@ -307,15 +307,11 @@
   box-shadow: inset 0 0 0 1px var(--omarchy-scene-line) !important;
 }
 
-:root {
+:root,
+[data-slot="composer-shell"] {
   --glass-blur: 0px !important;
   --glass-opacity: 100% !important;
   --chat-composer-glass-surface: var(--omarchy-scene-card) !important;
-}
-
-[data-slot="composer-host"] {
-  background-color: var(--omarchy-scene-card) !important;
-  backdrop-filter: none !important;
 }
 /* @end */
 
