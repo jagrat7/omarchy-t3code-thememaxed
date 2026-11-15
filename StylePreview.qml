@@ -1,8 +1,5 @@
 import QtQuick
 
-// A small T3 Code window with the wallpaper where a style puts it: the
-// sidebar's header, the conversation, the whole sidebar, or sharp behind a
-// frosted chat column.
 Item {
   id: root
 
@@ -25,15 +22,12 @@ Item {
   function shade(alpha) { return Qt.rgba(background.r, background.g, background.b, alpha) }
 
   Rectangle {
-    id: frame
     anchors.fill: parent
     radius: root.radius
     color: root.background
     clip: true
 
-    // Conversation
     Item {
-      id: chat
       x: root.sidebarWidth
       width: parent.width - x
       height: parent.height
@@ -79,7 +73,6 @@ Item {
       }
     }
 
-    // Sidebar
     Item {
       width: root.sidebarWidth
       height: parent.height
@@ -123,8 +116,6 @@ Item {
     border.color: root.ink(0.16)
   }
 
-  // The wallpaper filling its parent: decoded tiny and stretched for a blur,
-  // and tinted, unless sharp.
   component Wallpaper: Item {
     id: picture
     property bool sharp: false

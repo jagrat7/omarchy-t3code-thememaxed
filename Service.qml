@@ -3,11 +3,6 @@ import Qt.labs.folderlistmodel
 import Quickshell
 import Quickshell.Io
 
-// Keeps T3 Code's "Thememaxed" theme in step with the desktop. The publisher in
-// bin/ runs once when the shell starts the plugin, then after a theme switch,
-// a font change, a new wallpaper or a saved edit to the plugin's config. A
-// service, so exactly one of these runs per shell. The bar widget reads its
-// state and changes settings through it.
 Item {
   id: root
 
@@ -29,7 +24,6 @@ Item {
   // does not publish a second time for the same change.
   property bool savingSetting: false
 
-  // What the widget shows. status is what the publisher last wrote.
   readonly property bool publishing: run.running
   property var status: ({})
   property string style: "full"
@@ -37,12 +31,6 @@ Item {
   // A watch only holds on a file that exists, and the config is written by
   // the first run. While it is missing, the watcher is rebuilt after each run.
   property bool configMissing: false
-
-  // A theme switch touches several of the watched paths within a moment, so
-  // changes are gathered into one run.
-  function schedule() {
-    settle.restart()
-  }
 
   function publish(args) {
     if (run.running) {
@@ -61,7 +49,6 @@ Item {
     publish(["--style", name])
   }
 
-  // "auto", or a number from 0 to 1.
   function setTint(value) {
     var text = value === "auto" ? "auto" : String(Math.round(Number(value) * 100) / 100)
     if (text === tint) return
@@ -128,13 +115,12 @@ Item {
     }
   }
 
-  // A file whose every change means publishing again.
   component Trigger: FileView {
     watchChanges: true
     printErrors: false
     onFileChanged: {
       reload()
-      root.schedule()
+      settle.restart()
     }
   }
 
@@ -154,7 +140,7 @@ Item {
         onLoaded: root.readConfig(text())
         onFileChanged: {
           reload()
-          if (!root.savingSetting) root.schedule()
+          if (!root.savingSetting) settle.restart()
         }
       }
     }
@@ -169,9 +155,9 @@ Item {
     showDotAndDotDot: false
     showOnlyReadable: false
     onStatusChanged: {
-      if (status === FolderListModel.Ready) root.schedule()
+      if (status === FolderListModel.Ready) settle.restart()
     }
   }
 
-  Component.onCompleted: schedule()
+  Component.onCompleted: settle.restart()
 }

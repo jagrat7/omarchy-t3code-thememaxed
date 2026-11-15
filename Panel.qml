@@ -3,8 +3,6 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 
-// The panel behind the bar button: the style, the full-alt tint, and a new
-// wallpaper or a publish again.
 Panel {
   id: root
   moduleName: "io.github.jagrat7.omarchy-t3code-plus"
@@ -140,7 +138,12 @@ Panel {
         }
 
         PanelSeparator { width: parent.width; foreground: root.foreground; visible: root.backdrop }
-        SectionHeader { text: "CHAT COLUMN TINT"; visible: root.backdrop }
+        PanelSectionHeader {
+          text: "CHAT COLUMN TINT"
+          visible: root.backdrop
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+        }
 
         Row {
           id: tintRow
@@ -203,10 +206,5 @@ Panel {
     foreground: root.foreground
     fontFamily: root.fontFamily
     enabled: !!root.service
-  }
-
-  component SectionHeader: PanelSectionHeader {
-    foreground: root.foreground
-    fontFamily: root.fontFamily
   }
 }
