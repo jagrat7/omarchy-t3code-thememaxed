@@ -210,6 +210,17 @@
   background-position: center !important;
   background-repeat: no-repeat !important;
 }
+
+/* A new thread has no messages to keep readable, only the heading and the
+   composer, so the wallpaper shows through at half the tint, darker in the
+   middle where they sit. T3 Code marks no new-thread state; its composer then
+   fills the conversation (inset-0) instead of sitting at the bottom. */
+[data-workspace-area="conversation"]:has(~ [data-chat-composer-overlay].inset-0) {
+  background-image:
+    radial-gradient(50% 40% at 50% 50%, var(--omarchy-tint), transparent),
+    linear-gradient(color-mix(in srgb, var(--omarchy-tint) 50%, transparent), color-mix(in srgb, var(--omarchy-tint) 50%, transparent)),
+    var(--omarchy-wallpaper) !important;
+}
 /* @end */
 
 /* @part sidebar (too-much): the theme's first wallpaper runs down the whole
@@ -255,6 +266,21 @@
   backdrop-filter: blur(24px);
   mask-image: linear-gradient(90deg, transparent, #000 6rem, #000 calc(100% - 6rem), transparent);
   pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+/* A new thread (see the background part) has no chat column: the whole
+   scene shows, with a glow of the tint behind the heading and composer. */
+[data-workspace-area="conversation"]:has(~ [data-chat-composer-overlay].inset-0) {
+  background:
+    radial-gradient(45% 40% at 50% 50%, var(--omarchy-scene-tint), transparent),
+    linear-gradient(var(--omarchy-scene-edge), var(--omarchy-scene-edge)),
+    var(--omarchy-wallpaper) center / cover no-repeat,
+    {{ background }} !important;
+}
+
+[data-workspace-area="conversation"]:has(~ [data-chat-composer-overlay].inset-0)::before {
+  opacity: 0;
 }
 
 [data-user-message-bubble] {
