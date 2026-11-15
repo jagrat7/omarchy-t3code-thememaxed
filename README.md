@@ -1,9 +1,9 @@
 <h1 align="center">Omarchy+ for T3 Code</h1>
 
 <p align="center">
-  <a href="https://github.com/jagrat7/omarchy-t3code-plus/commits/main"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-t3code-plus?style=flat-square&label=version&labelColor=1c1d25&color=34c8cb" alt="Version"></a>
+  <a href="https://github.com/jagrat7/omarchy-t3code-thememaxed/commits/main"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-t3code-thememaxed?style=flat-square&label=version&labelColor=1c1d25&color=34c8cb" alt="Version"></a>
   <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/Omarchy-Quattro-34c8cb?style=flat-square&labelColor=1c1d25&logo=archlinux&logoColor=white" alt="Omarchy Quattro"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/jagrat7/omarchy-t3code-plus?style=flat-square&labelColor=1c1d25&color=34c8cb" alt="MIT license"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/jagrat7/omarchy-t3code-thememaxed?style=flat-square&labelColor=1c1d25&color=34c8cb" alt="MIT license"></a>
 </p>
 
 An Omarchy plugin that gives [T3 Code](https://github.com/pingdotgg/t3code) the
@@ -19,7 +19,7 @@ built on the same palette.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/jagrat7/omarchy-t3code-plus.git --enable
+omarchy plugin add https://github.com/jagrat7/omarchy-t3code-thememaxed.git --enable
 ```
 
 Then in T3 Code choose **Settings > Appearance > Omarchy+**. That's all: the
@@ -87,8 +87,8 @@ The same publisher can run from Omarchy hooks instead of the shell. Use one
 or the other, not both.
 
 ```bash
-git clone https://github.com/jagrat7/omarchy-t3code-plus.git
-bash omarchy-t3code-plus/scripts/install.sh full    # or minimal, or too-much
+git clone https://github.com/jagrat7/omarchy-t3code-thememaxed.git
+bash omarchy-t3code-thememaxed/scripts/install.sh full    # or minimal, or too-much
 ```
 
 This puts `t3code-omarchy-plus` in `~/.local/bin` and adds `theme-set` and
@@ -160,8 +160,8 @@ omarchy plugin validate .
 Symlink a clone into the plugin directory to work on it live:
 
 ```bash
-git clone https://github.com/jagrat7/omarchy-t3code-plus.git
-ln -s "$PWD/omarchy-t3code-plus" \
+git clone https://github.com/jagrat7/omarchy-t3code-thememaxed.git
+ln -s "$PWD/omarchy-t3code-thememaxed" \
   "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/io.github.jagrat7.omarchy-t3code-plus"
 omarchy-shell shell rescanPlugins
 omarchy plugin enable io.github.jagrat7.omarchy-t3code-plus

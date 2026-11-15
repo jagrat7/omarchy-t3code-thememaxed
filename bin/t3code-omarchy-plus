@@ -14,7 +14,7 @@ the theme, font, wallpaper or config changes. Safe to run by hand:
     t3code-omarchy-plus                    publish the current theme
     t3code-omarchy-plus --style too-much   switch style, then publish
 
-https://github.com/jagrat7/omarchy-t3code-plus
+https://github.com/jagrat7/omarchy-t3code-thememaxed
 """
 
 import argparse
@@ -70,7 +70,7 @@ MIN_TINT = 0.75
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".bmp"}
 
 CONFIG_TEMPLATE = """\
-# Omarchy+ for T3 Code: https://github.com/jagrat7/omarchy-t3code-plus
+# Omarchy+ for T3 Code: https://github.com/jagrat7/omarchy-t3code-thememaxed
 # The plugin applies changes to this file as soon as it is saved.
 
 # minimal:  the desktop wallpaper behind the sidebar's header

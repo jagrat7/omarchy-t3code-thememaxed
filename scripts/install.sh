@@ -5,11 +5,11 @@
 #   bash scripts/install.sh [minimal|full|too-much]
 #
 # Works from a checkout, or piped from curl (it then clones the repo itself).
-# https://github.com/jagrat7/omarchy-t3code-plus
+# https://github.com/jagrat7/omarchy-t3code-thememaxed
 
 set -euo pipefail
 
-REPO_URL="https://github.com/jagrat7/omarchy-t3code-plus.git"
+REPO_URL="https://github.com/jagrat7/omarchy-t3code-thememaxed.git"
 PLUGIN_ID="io.github.jagrat7.omarchy-t3code-plus"
 STYLE="${1:-}"
 

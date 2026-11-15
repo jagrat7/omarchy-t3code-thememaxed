@@ -3,7 +3,7 @@
 # The plugin is removed with: omarchy plugin remove io.github.jagrat7.omarchy-t3code-plus
 # Files are moved aside, not deleted. Omarchy's own "Omarchy" theme for T3 Code
 # is untouched either way.
-# https://github.com/jagrat7/omarchy-t3code-plus
+# https://github.com/jagrat7/omarchy-t3code-thememaxed
 
 set -euo pipefail
 

@@ -6,7 +6,7 @@
    borders, the menu and popup styling from shell.toml, the wallpapers) and
    publishes the result to T3 Code as the "Omarchy+" theme.
 
-   https://github.com/jagrat7/omarchy-t3code-plus */
+   https://github.com/jagrat7/omarchy-t3code-thememaxed */
 
 /* Palette: T3 Code's stock hues become the theme's terminal colours, so
    status text, badges and diff counts stay inside the theme. */
