@@ -1,0 +1,124 @@
+{
+  "captured": "2026-11-15",
+  "source": "T3 Code nightly 20261115.4723 with T3 Code Thememaxed at commit 4ae605b",
+  "plugin": {
+    "name": "T3 Code Thememaxed",
+    "version": "1.2.0",
+    "install": "omarchy plugin add https://github.com/jagrat7/omarchy-t3code-thememaxed.git --enable"
+  },
+  "styles": [
+    {
+      "id": "minimal",
+      "label": "minimal",
+      "shot": "shots/style-minimal.jpg"
+    },
+    {
+      "id": "full",
+      "label": "full",
+      "shot": "shots/style-full.jpg"
+    },
+    {
+      "id": "max",
+      "label": "max",
+      "shot": "shots/style-max.jpg"
+    },
+    {
+      "id": "full-alt",
+      "label": "full-alt",
+      "shot": "shots/style-full-alt.jpg"
+    }
+  ],
+  "styleTheme": "sakura-mochi-local",
+  "themes": [
+    {
+      "id": "sakura-mochi-local",
+      "name": "Sakura Mochi",
+      "accent": "#f23888",
+      "background": "#0b0d11",
+      "foreground": "#f0b7ca",
+      "shot": "shots/new-sakura-mochi-local.jpg",
+      "desktop": "shots/desk-sakura-mochi-local.jpg",
+      "insideWallpaper": "2-oni-mask-gallery.jpg",
+      "style": "full",
+      "screen": "new thread"
+    },
+    {
+      "id": "rose-meridian",
+      "name": "Rose Meridian",
+      "accent": "#ed9998",
+      "background": "#23221f",
+      "foreground": "#fbe4c5",
+      "shot": "shots/theme-rose-meridian.jpg",
+      "desktop": "shots/desk-rose-meridian.jpg",
+      "insideWallpaper": "06-stable-era.jpg",
+      "style": "full",
+      "screen": "thread"
+    },
+    {
+      "id": "ame-quattro-local",
+      "name": "Ame Quattro",
+      "accent": "#89b4fa",
+      "background": "#1e1e2e",
+      "foreground": "#cdd6f4",
+      "shot": "shots/new-ame-quattro-local.jpg",
+      "desktop": "shots/desk-ame-quattro-local.jpg",
+      "insideWallpaper": "BG1_2.png",
+      "style": "max",
+      "screen": "new thread"
+    },
+    {
+      "id": "infrared-snooze",
+      "name": "Infrared Snooze",
+      "accent": "#cc432e",
+      "background": "#150b0b",
+      "foreground": "#c2a08e",
+      "shot": "shots/theme-infrared-snooze.jpg",
+      "desktop": "shots/desk-infrared-snooze.jpg",
+      "insideWallpaper": "05-calcifer.png",
+      "style": "full-alt",
+      "screen": "thread"
+    },
+    {
+      "id": "sunlit-sands",
+      "name": "Sunlit Sands",
+      "accent": "#2a78b0",
+      "background": "#f7f1e3",
+      "foreground": "#2a2f4a",
+      "shot": "shots/new-sunlit-sands.jpg",
+      "desktop": "shots/desk-sunlit-sands.jpg",
+      "insideWallpaper": "2-saguaro-pair.webp",
+      "style": "full",
+      "screen": "new thread"
+    },
+    {
+      "id": "harbor",
+      "name": "Harbor",
+      "accent": "#5e81ac",
+      "background": "#dfe4c4",
+      "foreground": "#1c2d28",
+      "shot": "shots/theme-harbor.jpg",
+      "desktop": "shots/desk-harbor.jpg",
+      "insideWallpaper": "BG2.jpg",
+      "style": "max",
+      "screen": "thread"
+    }
+  ],
+  "music": {
+    "title": "Stuck In A Dream (ft. Juhi Perumal)",
+    "artist": "Leonell Cassio",
+    "source": "https://freemusicarchive.org/music/leonell-cassio/single/leonell-cassio-stuck-in-a-dream-ft-juhi-perumal/",
+    "license": "CC BY 4.0",
+    "startBar": 16
+  },
+  "styleWallpaper": "2-oni-mask-gallery.jpg",
+  "panel": {
+    "wallpaper": "shots/wall-sakura.jpg",
+    "border": [
+      "rgba(242,56,136,0.93)",
+      "rgba(240,183,202,0.8)",
+      "rgba(103,221,130,0.67)"
+    ],
+    "borderAngle": 35,
+    "meta": "Published just now"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "file": "audio/track.mp3",
+  "bpm": 90.002,
+  "beat_seconds": 0.666649,
+  "bar_seconds": 2.666598,
+  "first_downbeat": 0.0,
+  "beat_fit_residual_ms": 28.91,
+  "bars": [
+    {
+      "start": 0.0,
+      "rms_db": -15.6
+    },
+    {
+      "start": 2.6666,
+      "rms_db": -17.2
+    },
+    {
+      "start": 5.3332,
+      "rms_db": -15.6
+    },
+    {
+      "start": 7.9998,
+      "rms_db": -16.8
+    },
+    {
+      "start": 10.6664,
+      "rms_db": -17.0
+    },
+    {
+      "start": 13.333,
+      "rms_db": -21.4
+    },
+    {
+      "start": 15.9996,
+      "rms_db": -25.0
+    },
+    {
+      "start": 18.6662,
+      "rms_db": -24.6
+    },
+    {
+      "start": 21.3328,
+      "rms_db": -10.4
+    },
+    {
+      "start": 23.9994,
+      "rms_db": -10.9
+    },
+    {
+      "start": 26.6659,
+      "rms_db": -10.4
+    },
+    {
+      "start": 29.3325,
+      "rms_db": -10.9
+    },
+    {
+      "start": 31.9991,
+      "rms_db": -10.8
+    },
+    {
+      "start": 34.6657,
+      "rms_db": -11.3
+    },
+    {
+      "start": 37.3323,
+      "rms_db": -10.7
+    },
+    {
+      "start": 39.9989,
+      "rms_db": -11.1
+    },
+    {
+      "start": 42.6655,
+      "rms_db": -10.6
+    }
+  ]
+}

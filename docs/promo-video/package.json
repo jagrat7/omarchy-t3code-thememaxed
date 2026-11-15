@@ -1,0 +1,23 @@
+{
+  "name": "thememaxed-promo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "nice -n 10 remotion render src/index.ts Promo out/silent.mp4 --codec h264 --crf 14 --pixel-format yuv420p --color-space bt709 --concurrency 3",
+    "typecheck": "tsc --noEmit",
+    "music": "curl -fL -o audio/track.mp3 https://files.freemusicarchive.org/storage-freemusicarchive-org/tracks/WNWNNIW978yOhNFzyKLrfskD5CNJLKSkxYOmvb76.mp3",
+    "soundtrack": "python3 scripts/soundtrack.py"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.539",
+    "@remotion/fonts": "4.0.539",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.539"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "^5.9.0"
+  }
+}
