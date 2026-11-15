@@ -29,12 +29,15 @@ desktop changes.
 
 <img src="docs/screenshots/settings.webp" width="344" alt="Thememaxed in T3 Code's Appearance settings">
 
-<p align="center"><img src="docs/screenshots/panel.webp" width="456" alt="The bar panel: a preview of each style, New wallpaper and Edit config"></p>
+## The bar icon
 
-Click the bar icon to pick a style. **New wallpaper** swaps the picture
-inside T3 Code for another of the theme's, never the one on your desktop.
-With `full-alt`, a slider sets the chat column's tint. Middle-click the icon
-to publish again.
+Click the bar icon to pick a style.
+
+<p><img src="docs/screenshots/panel.webp" width="456" alt="The bar panel: a preview of each style, New wallpaper and Edit config"></p>
+
+**New wallpaper** swaps the picture inside T3 Code for another of the
+theme's, never the one on your desktop. With `full-alt`, a slider sets the
+chat column's tint. Middle-click the icon to publish again.
 
 The icon is optional. Drag it off the bar to remove it; the theme still
 follows the desktop. To bring it back:
