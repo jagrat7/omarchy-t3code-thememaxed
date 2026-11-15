@@ -169,4 +169,4 @@ Tested with Omarchy 4.5 and T3 Code 0.1.10 (nightly, November 2026).
   update renames either, a new thread looks like any other thread.
 
 ### Misc
-Indipendande project Not affiliated with Omarchy or T3 Code.
+independent project, not affiliated with Omarchy or T3 Code.
