@@ -12,6 +12,8 @@ corners and borders, the shell's menus and popups, and the theme's wallpaper
 behind the app. It follows every theme switch, font change and new wallpaper
 on its own.
 
+![T3 Code with Omarchy+ in the backdrop style, on the Retro 82 theme](docs/screenshots/backdrop.webp)
+
 Omarchy already publishes a colours-only T3 Code theme called **Omarchy**.
 This plugin leaves that one alone and publishes a second theme, **Omarchy+**,
 built on the same palette.
@@ -36,6 +38,19 @@ The wallpaper comes in three strengths, plus a sharp alternative to `full`:
 | `full` (default) | Desktop wallpaper | Random theme wallpaper | Plain |
 | `too-much` | Desktop wallpaper | Random theme wallpaper | Desktop wallpaper |
 | `backdrop` | Plain | Desktop wallpaper, sharp, behind a frosted chat column | Plain |
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/minimal.webp" alt="minimal style"><br><code>minimal</code></td>
+    <td><img src="docs/screenshots/full.webp" alt="full style"><br><code>full</code></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/too-much.webp" alt="too-much style"><br><code>too-much</code></td>
+    <td><img src="docs/screenshots/backdrop.webp" alt="backdrop style"><br><code>backdrop</code></td>
+  </tr>
+</table>
+
+All four on the Retro 82 theme.
 
 The header shows the wallpaper on your desktop and changes with it. The
 conversation gets a random one of the theme's wallpapers each time the theme
