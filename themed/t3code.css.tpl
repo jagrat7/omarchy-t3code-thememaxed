@@ -310,6 +310,13 @@
 }
 /* @end */
 
+/* The row under the composer (machine, checkout, branch, access) is just
+   text, without the page-coloured glass T3 Code puts behind it. */
+[data-slot="composer-context-strip"] {
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
 /* The composer is a window: inactive border at rest, active border in focus.
    T3 Code draws the outline on the card, or on its main surface while a
    banner (such as the stash tab) is attached, so both are covered. */
