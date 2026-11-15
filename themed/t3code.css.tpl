@@ -275,14 +275,10 @@
   transition: opacity 0.3s ease;
 }
 
-/* A new thread (see the background part) has no chat column: the whole
-   scene shows, with a glow of the tint behind the heading and composer. */
+/* A new thread (see the background part) has no chat column: the wallpaper
+   shows whole, untinted. */
 [data-workspace-area="conversation"]:has(~ [data-chat-composer-overlay].inset-0) {
-  background:
-    radial-gradient(45% 40% at 50% 50%, var(--omarchy-scene-tint), transparent),
-    linear-gradient(var(--omarchy-scene-edge), var(--omarchy-scene-edge)),
-    var(--omarchy-wallpaper) center / cover no-repeat,
-    {{ background }} !important;
+  background: var(--omarchy-wallpaper) center / cover no-repeat, {{ background }} !important;
 }
 
 [data-workspace-area="conversation"]:has(~ [data-chat-composer-overlay].inset-0)::before {
