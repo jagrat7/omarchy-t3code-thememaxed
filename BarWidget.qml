@@ -45,7 +45,16 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󰏘"
+    iconComponent: Component {
+      Item {
+        DripMark {
+          x: (parent.width - width) / 2
+          y: (parent.height - height) / 2
+          iconSize: button.iconSize
+          color: button.foreground
+        }
+      }
+    }
     tooltipText: root.tooltip
     opacity: root.service && root.service.publishing ? 0.5 : 1
 

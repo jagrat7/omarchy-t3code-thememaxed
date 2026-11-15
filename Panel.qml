@@ -78,11 +78,9 @@ Panel {
           foreground: root.foreground
           fontFamily: root.fontFamily
           iconComponent: Component {
-            Text {
-              text: "󰏘"
+            DripMark {
+              iconSize: Style.font.display
               color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.display
             }
           }
         }

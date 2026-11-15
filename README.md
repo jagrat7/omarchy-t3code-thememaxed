@@ -28,7 +28,7 @@ Then in T3 Code choose **Settings > Appearance > Thememaxed**. That's all: the
 plugin runs in the Omarchy shell and republishes the theme whenever the
 desktop changes.
 
-The plugin also puts a palette icon (󰏘) in the bar. Click it to pick the
+The plugin also puts its icon, T3 dripping paint, in the bar. Click it to pick the
 style and the backdrop's tint, publish again or open the config. Middle-click
 publishes again. To move or remove the icon, use the bar's widget settings like any
 other widget. Updated from a version without the icon? Run
