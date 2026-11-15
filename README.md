@@ -34,9 +34,9 @@ The wallpaper comes in three strengths, plus a sharp alternative to `full`:
 
 | Style | Sidebar header | Conversation | Sidebar |
 | --- | --- | --- | --- |
-| `minimal` | Desktop wallpaper | Plain | Plain |
-| `full` (default) | Desktop wallpaper | Random theme wallpaper | Plain |
-| `too-much` | Desktop wallpaper | Random theme wallpaper | Desktop wallpaper |
+| `minimal` | Theme's first wallpaper | Plain | Plain |
+| `full` (default) | Theme's first wallpaper | Random theme wallpaper | Plain |
+| `too-much` | Theme's first wallpaper | Random theme wallpaper | Theme's first wallpaper |
 | `backdrop` | Plain | Desktop wallpaper, sharp, behind a frosted chat column | Plain |
 
 <table>
@@ -52,7 +52,8 @@ The wallpaper comes in three strengths, plus a sharp alternative to `full`:
 
 All four on the Retro 82 theme.
 
-The header shows the wallpaper on your desktop and changes with it. The
+The header always shows the theme's first wallpaper, the one Omarchy starts
+the theme on, so it stays the same while you cycle the desktop's. The
 conversation gets a random one of the theme's wallpapers each time the theme
 is republished. Every picture is blurred and tinted enough to keep text
 readable, more if the theme's own blur or scrim is stronger.

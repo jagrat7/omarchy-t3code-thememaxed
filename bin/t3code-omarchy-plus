@@ -112,7 +112,7 @@ CONFIG_TEMPLATE = """\
 # Omarchy+ for T3 Code: https://github.com/jagrat7/omarchy-t3code-thememaxed
 # The plugin applies changes to this file as soon as it is saved.
 
-# minimal:  the desktop wallpaper behind the sidebar's header
+# minimal:  the theme's first wallpaper behind the sidebar's header
 # full:     the header, plus a random theme wallpaper behind the conversation
 # too-much: the header and conversation, plus the wallpaper down the sidebar
 # backdrop: the desktop wallpaper, sharp, behind a frosted chat column
@@ -311,13 +311,16 @@ def theme_wallpapers():
     return sorted(images, key=str)
 
 
+def first_wallpaper():
+    """The theme's first still wallpaper in Omarchy's order, its default."""
+    wallpapers = theme_wallpapers()
+    return wallpapers[0] if wallpapers else None
+
+
 def desktop_wallpaper():
     """The wallpaper on the desktop, or the theme's first when that is a video."""
     current = (CURRENT_DIR / "background").resolve()
-    if is_image(current):
-        return current
-    wallpapers = theme_wallpapers()
-    return wallpapers[0] if wallpapers else None
+    return current if is_image(current) else first_wallpaper()
 
 
 def random_wallpaper():
@@ -715,8 +718,8 @@ def build_css(settings):
         declarations = "".join(f"--omarchy-{name}:{value};" for name, value in used.items())
         return f":root{{{declarations}}}{css}"
 
-    # The header always shows the desktop wallpaper; the conversation a random
-    # one. Each is encoded only if the style uses it, and the header's picture
+    # The header always shows the theme's first wallpaper; the conversation a
+    # random one. Each is encoded only if the style uses it, and the header's picture
     # may take at most half of the room left when both are needed.
     wants_header = "var(--omarchy-header-wallpaper)" in css
     wants_background = "var(--omarchy-wallpaper)" in css
@@ -724,7 +727,7 @@ def build_css(settings):
     if wants_header:
         free = CSS_LIMIT - len(with_variables())
         share = free // 2 if wants_background else free
-        variables["header-wallpaper"] = wallpaper_css(desktop_wallpaper(), share, HEADER_STEPS, settings["min_blur"])
+        variables["header-wallpaper"] = wallpaper_css(first_wallpaper(), share, HEADER_STEPS, settings["min_blur"])
     if wants_background:
         free = CSS_LIMIT - len(with_variables())
         if "backdrop" in keep:
