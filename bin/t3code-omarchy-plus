@@ -1,19 +1,7 @@
 #!/usr/bin/python3
-"""Publish the "Thememaxed" theme to T3 Code: Omarchy's palette plus the look.
+"""Publish Omarchy's palette, shell styling and wallpapers as T3 Code's Thememaxed theme.
 
-Omarchy already renders T3 Code's palette into the current theme (t3code.json)
-and publishes it as T3 Code's "Omarchy" theme. This takes that palette, adds
-CSS rendered from themed/t3code.css.tpl with the theme's colours, the system
-font, Hyprland's rounding and borders, the shell's popup and menu styling and
-the wallpapers, and publishes the result as a second theme, "Thememaxed".
-Omarchy's own theme is left as it is.
-
-Run by the plugin's service (or the hooks of the standalone install) whenever
-the theme, font, wallpaper or config changes. Safe to run by hand:
-
-    t3code-omarchy-plus                    publish the current theme
-    t3code-omarchy-plus --style max        switch style, then publish
-
+Run on theme, font, wallpaper or config changes. --style and --tint persist settings.
 https://github.com/jagrat7/omarchy-t3code-thememaxed
 """
 
@@ -32,7 +20,6 @@ import sys
 import tempfile
 import time
 import tomllib
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HOME = Path.home()
@@ -45,18 +32,12 @@ CONFIG = CONFIG_HOME / "omarchy-t3code-plus/config.toml"
 TEMPLATE = Path(__file__).resolve().parent.parent / "themed/t3code.css.tpl"
 T3CODE_HOME = Path(os.environ.get("T3CODE_HOME") or HOME / ".t3")
 STATE_DIR = T3CODE_HOME / "userdata"
-# A theme of its own, beside Omarchy's "omarchy", which Omarchy keeps writing.
 TARGET = STATE_DIR / "themes/omarchy-plus.json"
 THEME_NAME = "Thememaxed"
-# What the last run published, for the bar widget.
 STATUS = STATE_HOME / "omarchy-t3code-plus/status.json"
 LOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "t3code-omarchy-plus.lock"
 # T3 Code rejects a theme whose CSS is longer than this.
 CSS_LIMIT = 50000
-# The wallpapers have to travel inside that CSS, so each is encoded as AVIF at
-# the first of these widths and qualities that fits in what the rest leaves
-# free. They are blurred first, so small images are enough. The header's
-# picture is shown at the sidebar's width, so it starts smaller.
 BACKGROUND_STEPS = ((960, 45), (640, 45), (640, 30), (480, 30), (320, 30))
 HEADER_STEPS = ((640, 45), (480, 40), (480, 30), (320, 30), (240, 30))
 # The full-alt style shows its one wallpaper sharp behind the conversation,
@@ -83,11 +64,6 @@ SHARP_SKETCH_QUALITIES = (5, 20, 45, 70)
 SHARP_SKETCH_RATIO = 0.85
 SHARP_WIDTH_POWER = 1.6
 SHARP_LEVEL_GROWTH = 0.065
-# What the encodes of the last few wallpapers measured, and the picture chosen,
-# so publishing one again (after a font, tint, config or wallpaper change)
-# encodes little or nothing. It holds a few themes' worth. After a full-alt
-# publish the theme's other wallpapers are encoded in the background, at low
-# priority, so the next one dealt is ready.
 SHARP_CACHE = STATUS.parent / "sharp-cache.json"
 SHARP_CACHE_ENTRIES = 32
 WARM_LOCK = LOCK.with_name("t3code-omarchy-plus-warm.lock")
@@ -97,7 +73,6 @@ WARM_LOCK = LOCK.with_name("t3code-omarchy-plus-warm.lock")
 # looked for.
 PIXEL_ART_MAX_BLOCK = 16
 
-# Which of the CSS template's optional parts each style keeps.
 STYLES = {
     "minimal": {"header"},
     "full": {"header", "background"},
@@ -105,7 +80,6 @@ STYLES = {
     "full-alt": {"backdrop"},
 }
 DEFAULT_STYLE = "full"
-# Earlier names of styles; a config that still uses one is moved to the new name.
 RENAMED_STYLES = {"too-much": "max", "backdrop": "full-alt"}
 # The least the wallpaper is blurred and tinted, so text stays readable on any
 # wallpaper. A theme whose own blur or tint is stronger gets its own. The blur
@@ -159,7 +133,6 @@ style = "{style}"
 """
 
 
-# Filled in while building, then written to STATUS.
 REPORT = {}
 
 
@@ -177,7 +150,7 @@ def read_toml(path):
 
 def load_settings():
     config = read_toml(CONFIG)
-    style = config.get("style", DEFAULT_STYLE)
+    style = str(config.get("style", DEFAULT_STYLE))
     if style in RENAMED_STYLES:
         style = RENAMED_STYLES[style]
         save_setting("style", f'"{style}"')
@@ -242,11 +215,7 @@ def command_output(*command):
 
 @functools.cache
 def hyprland_options():
-    """HYPRLAND_DEFAULTS with the values Hyprland has set, asked for in one call.
-
-    The answers come back separated by blank lines; an option Hyprland does
-    not know answers in plain text and keeps its default.
-    """
+    """Read Hyprland's options in one batch, keeping defaults for unknown options."""
     options = dict(HYPRLAND_DEFAULTS)
     batch = "; ".join(f"getoption {name}" for name in options)
     for answer in command_output("hyprctl", "-j", "--batch", batch).split("\n\n\n"):
@@ -355,7 +324,7 @@ def border_widths(section, prefix):
 
 
 def is_image(path):
-    return path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+    return path.suffix.lower() in IMAGE_SUFFIXES and path.is_file()
 
 
 def theme_name():
@@ -365,6 +334,7 @@ def theme_name():
         return ""
 
 
+@functools.cache
 def theme_wallpapers():
     """The active theme's still wallpapers, the user's own included, in Omarchy's order."""
     name = theme_name()
@@ -452,7 +422,11 @@ def backdrop_alpha(setting, source, background):
 def in_parallel(function, items):
     """function(item) for each item, run side by side, in order."""
     items = list(items)
-    with ThreadPoolExecutor(max_workers=max(1, len(items))) as pool:
+    if len(items) < 2:
+        return [function(item) for item in items]
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=len(items)) as pool:
         return list(pool.map(function, items))
 
 
@@ -530,16 +504,10 @@ def sharp_known(sizes, room, width, quality):
 
 
 def sharp_choice(sizes, room, widths, good, top, estimate):
-    """The width and quality the sharp picture takes, and the encodes still needed to be sure.
+    """Choose the widest image holding `good`, then its best quality up to `top`.
 
-    The widest of `widths` that holds quality `good` within `room` bytes wins,
-    at the highest quality up to `top` that fits; when none holds it, the
-    narrowest at the highest quality that fits. `sizes` maps the (width,
-    quality) pairs encoded so far to their bytes; what they leave open (see
-    sharp_known), estimate(width, quality) guesses.
-
-    Returns (width, quality), or None when nothing fits, and the pairs to
-    encode before that answer is certain; none when it is.
+    Fall back to the narrowest below `good`. Return the choice (or None) and
+    the unmeasured pairs needed to confirm it, using `estimate` for unknown sizes.
     """
     measured = {(width, avif_level(quality)): length for (width, quality), length in sizes.items()}
 
@@ -654,11 +622,7 @@ def write_sharp_cache(entry):
     """Keep `entry` first in SHARP_CACHE, before the most recent others."""
     entries = [entry] + [old for old in read_sharp_cache() if old.get("key") != entry["key"]]
     try:
-        SHARP_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(prefix=f"{SHARP_CACHE.name}.", dir=SHARP_CACHE.parent)
-        with os.fdopen(handle, "w") as file:
-            json.dump(entries[:SHARP_CACHE_ENTRIES], file)
-        os.replace(temporary, SHARP_CACHE)
+        write_json(SHARP_CACHE, entries[:SHARP_CACHE_ENTRIES], indent=None)
     except OSError:
         pass
 
@@ -696,7 +660,12 @@ def sharp_wallpaper_css(source, budget):
         width, quality, data = entry["picture"]
         encoded[width, quality] = base64.b64decode(data)
 
-    def as_css(kind, data):
+    def as_css(kind, data, width=None):
+        if width is not None:
+            REPORT["picture"] = {
+                "format": kind, "bytes": len(data), "width": width,
+                "height": round(size[1] * width / size[0]),
+            }
         return f'url("data:image/{kind};base64,{base64.b64encode(data).decode()}")'
 
     def room(kind):
@@ -786,14 +755,14 @@ def sharp_wallpaper_css(source, budget):
                     entry["webp"] = base64.b64encode(webp).decode()
                 webp = base64.b64decode(entry["webp"])
                 if webp and len(webp) <= room("webp"):
-                    return as_css("webp", webp), "pixelated"
+                    return as_css("webp", webp, native), "pixelated"
                 data = search([native], 0, 95)
                 if data:
-                    return as_css("avif", data), "pixelated"
+                    return as_css("avif", data, native), "pixelated"
             # Never wider than the picture itself.
             widths = list(dict.fromkeys(min(width, size[0]) for width in SHARP_WIDTHS))
             data = search(widths, SHARP_GOOD_QUALITY, SHARP_TOP_QUALITY)
-            return (as_css("avif", data), "auto") if data else ("none", "auto")
+            return (as_css("avif", data, entry["picture"][0]), "auto") if data else ("none", "auto")
 
         css = result()
     if key:
@@ -877,9 +846,6 @@ def omarchy_variables(settings):
     row_fill = css_color(str(menu.get("selected-background", foreground)), number(menu, "selected-background-alpha", 0.08))
     top, right, bottom, left = border_widths(menu, "selected-border")
 
-    # The theme's tint is the scrim the shell lays over the desktop behind its
-    # menu and launcher (the heavier of the two). It is used when it is heavier
-    # than the minimum.
     scrim = max((menu, shell.get("launcher", {})), key=lambda section: number(section, "scrim-alpha", 0.0))
     min_tint = settings["min_tint"]
     tint_alpha = min(max(number(scrim, "scrim-alpha", 0.0), min_tint), 1.0)
@@ -906,8 +872,6 @@ def omarchy_variables(settings):
         "row-border-right": f"{right:g}px",
         "row-border-bottom": f"{bottom:g}px",
         "row-border-left": f"{left:g}px",
-        # The full-alt style's cards, of the theme's own colours. The chat
-        # column's tint depends on the wallpaper, so build_css adds it.
         "scene-card": css_color(background, 0.85) or "transparent",
         "scene-bubble": css_color(background, 0.45) or "transparent",
         "scene-line": css_color(foreground, 0.16) or "transparent",
@@ -956,13 +920,13 @@ def picture_report(image):
     return {"format": match.group(1), "bytes": len(data), "width": width, "height": height}
 
 
-def write_json(path, data):
+def write_json(path, data, indent=2):
     """Write `data` to `path` in one step, as the apps watching it need."""
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(prefix=f"{path.name}.", dir=path.parent)
     try:
         with os.fdopen(handle, "w") as file:
-            json.dump(data, file, indent=2)
+            json.dump(data, file, indent=indent)
             file.write("\n")
         os.replace(temporary, path)
     except BaseException:
@@ -1030,18 +994,16 @@ def build_css(settings, inside=None):
         REPORT["tint"] = round(alpha, 3)
         variables["scene-edge"] = css_color(background, alpha / 3) or "transparent"
 
+    used = set(re.findall(r"var\(--omarchy-([\w-]+)\)", css))
+
     def with_variables():
-        # Only the values this style uses, to leave the wallpaper more room.
-        used = {name: value for name, value in variables.items() if f"var(--omarchy-{name})" in css}
-        declarations = "".join(f"--omarchy-{name}:{value};" for name, value in used.items())
+        declarations = "".join(f"--omarchy-{name}:{value};" for name, value in variables.items() if name in used)
         return f":root{{{declarations}}}{css}"
 
-    # The header always shows the theme's first wallpaper; the conversation
-    # the inside one. Each is encoded only if the style uses it, and the header's picture
-    # may take at most half of the room left when both are needed.
     wants_header = "var(--omarchy-header-wallpaper)" in css
     wants_background = "var(--omarchy-wallpaper)" in css
     variables["header-wallpaper"] = variables["wallpaper"] = "none"
+    REPORT["picture"] = None
     if wants_background and "backdrop" in keep:
         # Sized as if pixelated, the longer of the two renderings.
         variables["wallpaper-rendering"] = "pixelated"
@@ -1052,10 +1014,6 @@ def build_css(settings, inside=None):
         share = free // 2 if wants_background else free
         header_source = first_wallpaper() if wants_header else None
         background_source = inside if wants_background else None
-        # The conversation's picture gets what the header's leaves. The two are
-        # encoded side by side: the conversation's first step in the least the
-        # header can leave, and should that not fit, its steps again in what
-        # the header did leave.
         variables["header-wallpaper"], variables["wallpaper"] = in_parallel(lambda job: job(), [
             lambda: wallpaper_css(header_source, share, HEADER_STEPS, settings["min_blur"]),
             lambda: wallpaper_css(background_source, free - share, BACKGROUND_STEPS[:1], settings["min_blur"]),
@@ -1065,7 +1023,7 @@ def build_css(settings, inside=None):
             variables["wallpaper"] = wallpaper_css(background_source, free, BACKGROUND_STEPS, settings["min_blur"])
     css = with_variables()
     REPORT["chars"] = len(css)
-    REPORT["picture"] = picture_report(variables["wallpaper"])
+    REPORT["picture"] = REPORT["picture"] or picture_report(variables["wallpaper"])
     REPORT["rendering"] = variables.get("wallpaper-rendering", "auto")
     if len(css) > CSS_LIMIT:
         warn(f"the CSS is {len(css)} characters, over T3 Code's {CSS_LIMIT} limit; publishing the palette without it.")
@@ -1091,7 +1049,6 @@ def build_theme(settings):
 
 
 def publish(settings):
-    # Only follow an install that already exists.
     if not (THEME_DIR / "t3code.json").is_file() or not STATE_DIR.is_dir():
         return False
     theme = build_theme(settings)
@@ -1153,7 +1110,6 @@ def main():
     if args.warm:
         warm(load_settings())
         return 0
-    # A first run writes the config with its defaults, so there is a file to edit.
     try:
         if args.style or not CONFIG.exists():
             save_setting("style", f'"{args.style or DEFAULT_STYLE}"')
