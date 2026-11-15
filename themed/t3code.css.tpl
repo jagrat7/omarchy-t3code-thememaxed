@@ -221,6 +221,12 @@
     linear-gradient(color-mix(in srgb, var(--omarchy-tint) 50%, transparent), color-mix(in srgb, var(--omarchy-tint) 50%, transparent)),
     var(--omarchy-wallpaper) !important;
 }
+
+/* On a new thread, and while a thread loads, T3 Code fills the empty
+   timeline with a solid placeholder that hides the wallpaper. */
+[data-timeline-loading] {
+  background: transparent !important;
+}
 /* @end */
 
 /* @part sidebar (too-much): the theme's first wallpaper runs down the whole
@@ -281,6 +287,10 @@
 
 [data-workspace-area="conversation"]:has(~ [data-chat-composer-overlay].inset-0)::before {
   opacity: 0;
+}
+
+[data-timeline-loading] {
+  background: transparent !important;
 }
 
 [data-user-message-bubble] {
