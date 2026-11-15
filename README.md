@@ -91,9 +91,7 @@ than filled, and the composer is a dark card.
 
 T3 Code caps a theme's CSS at 20,000 characters and accepts pictures only
 inside it, so the wallpaper is squeezed into what is left, about 10 KB. With `avifenc` installed (from `libavif`) it is a 10-bit AVIF of up
-to 1920 pixels at the best quality that fits. The middle, which sits behind
-the glass anyway, is softened before encoding, which frees about a third of
-the bytes for the sharp sides. Finding the best quality takes a few slow
+to 1920 pixels at the best quality that fits. Finding the best quality takes a few slow
 encodes, so what they measured is kept for the last few wallpapers, and
 publishing one of them again (after a font, tint or config change) takes a
 fraction of a second. Pixel art is found by its blocks and sent at its own

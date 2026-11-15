@@ -88,14 +88,6 @@ SHARP_LEVEL_GROWTH = 0.065
 # or nothing.
 SHARP_CACHE = STATUS.parent / "sharp-cache.json"
 SHARP_CACHE_ENTRIES = 8
-# The middle of the picture lies behind the frosted chat column, where T3 Code
-# blurs it anyway, so it is softened before encoding: detail there would only
-# take room from the sides. SOFT_MIDDLE is the softened band, as fractions of
-# the width, narrower than the column at any usual window size; its edges fade
-# over SOFT_FADE of the width, and SOFT_BLUR is the blur as a fraction too.
-SOFT_MIDDLE = (0.4, 0.6)
-SOFT_FADE = 0.015
-SOFT_BLUR = 0.01
 # Pixel art drawn at a whole-number scale (each art pixel a block of screen
 # pixels) is sent at its own size and scaled up by T3 Code with hard edges,
 # which keeps it crisp in a fraction of the room. Blocks up to this size are
@@ -617,8 +609,7 @@ def sharp_cache_key(source):
         return None
     tools = [shutil.which(tool) for tool in ("avifenc", "magick")]
     recipe = [
-        SHARP_ENCODER, SHARP_WIDTHS, SHARP_GOOD_QUALITY, SHARP_TOP_QUALITY, SOFT_MIDDLE, SOFT_FADE,
-        SOFT_BLUR, PIXEL_ART_MAX_BLOCK, [os.stat(tool).st_mtime_ns if tool else 0 for tool in tools],
+        SHARP_ENCODER, SHARP_WIDTHS, SHARP_GOOD_QUALITY, SHARP_TOP_QUALITY, PIXEL_ART_MAX_BLOCK, [os.stat(tool).st_mtime_ns if tool else 0 for tool in tools],
     ]
     return json.dumps([str(source), stat.st_mtime_ns, stat.st_size, recipe])
 
@@ -686,34 +677,22 @@ def sharp_wallpaper_css(source, budget):
     with tempfile.TemporaryDirectory() as folder:
         pngs = {}
 
-        def picture(width, soften=True, sample=None):
-            """The wallpaper at `width` as an uncompressed PNG, its middle softened, or None."""
+        def picture(width, sample=None):
+            """The wallpaper at `width` as an uncompressed PNG, or None."""
             sample = entry["block"] > 1 if sample is None else sample
-            if (width, soften, sample) in pngs:
-                return pngs[width, soften, sample]
+            if (width, sample) in pngs:
+                return pngs[width, sample]
             height = round(size[1] * width / size[0])
-            png = Path(folder) / f"{width}{'s' if soften else ''}{'p' if sample else ''}.png"
+            png = Path(folder) / f"{width}{'p' if sample else ''}.png"
             # -sample keeps pixel art's hard edges; photos are resized smoothly.
             command = ["magick", f"{source}[0]", "-sample" if sample else "-resize", f"{width}x{height}!", "-strip"]
-            if soften:
-                # Blurred at a quarter of the size, which looks the same and
-                # is far quicker, then laid over the middle through a band
-                # that fades at its edges.
-                left, right = (round(width * edge) for edge in SOFT_MIDDLE)
-                command += [
-                    "(", "+clone", "-scale", "25%", "-blur", f"0x{width * SOFT_BLUR / 4:.3g}", "-resize", f"{width}x{height}!",
-                    "(", "-size", f"{width}x1", "xc:black", "-fill", "white", "-draw", f"rectangle {left},0 {right},0",
-                    "-blur", f"0x{width * SOFT_FADE:.3g}", "-scale", f"{width}x{height}!", ")",
-                    "-alpha", "off", "-compose", "CopyOpacity", "-composite", ")",
-                    "-compose", "Over", "-composite", "-alpha", "off",
-                ]
             try:
                 # Uncompressed: zlib would take most of the time, and avifenc reads it once.
                 result = subprocess.run([*command, "-define", "png:compression-level=0", str(png)], capture_output=True, timeout=30)
             except (OSError, subprocess.TimeoutExpired):
                 result = None
-            pngs[width, soften, sample] = png if result and result.returncode == 0 else None
-            return pngs[width, soften, sample]
+            pngs[width, sample] = png if result and result.returncode == 0 else None
+            return pngs[width, sample]
 
         def encode(width, quality, settings=SHARP_ENCODER):
             png = picture(width)
@@ -766,7 +745,7 @@ def sharp_wallpaper_css(source, budget):
                 # keeps every pixel exact, otherwise the best AVIF that fits.
                 native = size[0] // entry["block"]
                 if entry["webp"] is None:
-                    png = picture(native, soften=False)
+                    png = picture(native)
                     if png is None:
                         return "none", "auto"
                     try:

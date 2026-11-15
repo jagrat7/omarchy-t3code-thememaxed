@@ -244,10 +244,8 @@
 /* @part backdrop (backdrop): the desktop wallpaper as a scene behind the
    conversation, sharp at the sides. The chat column is frosted glass: the
    picture behind it blurred and tinted only as much as the wallpaper's
-   brightness needs, fading out at its edges. The picture is centred on the
-   conversation, so its middle, which the publisher softens to save room for
-   the sides, stays behind the glass. The glass sits behind the messages,
-   between the conversation's background and its content. */
+   brightness needs, fading out at its edges. The glass sits behind the
+   messages, between the conversation's background and its content. */
 [data-workspace-area="conversation"] {
   background:
     linear-gradient(var(--omarchy-scene-edge), var(--omarchy-scene-edge)),
