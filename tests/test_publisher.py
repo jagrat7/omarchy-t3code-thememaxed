@@ -182,6 +182,12 @@ class Settings(unittest.TestCase):
         self.assertEqual(settings["style"], "max")
         self.assertEqual(settings["min_tint"], 0.9)
 
+    def test_renamed_styles_move_to_their_new_names(self):
+        for old, new in (("too-much", "max"), ("backdrop", "full-alt")):
+            self.config.write_text(f'style = "{old}"\nmin_tint = 0.9\n')
+            self.assertEqual(publisher.load_settings()["style"], new)
+            self.assertEqual(self.config.read_text(), f'style = "{new}"\nmin_tint = 0.9\n')
+
     def test_bad_values_fall_back(self):
         self.config.write_text('style = "loud"\nmin_blur = "lots"\nmin_tint = 3\n')
         with mock.patch.object(publisher, "warn"):

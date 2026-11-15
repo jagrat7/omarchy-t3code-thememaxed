@@ -102,6 +102,8 @@ STYLES = {
     "full-alt": {"backdrop"},
 }
 DEFAULT_STYLE = "full"
+# Earlier names of styles; a config that still uses one is moved to the new name.
+RENAMED_STYLES = {"too-much": "max", "backdrop": "full-alt"}
 # The least the wallpaper is blurred and tinted, so text stays readable on any
 # wallpaper. A theme whose own blur or tint is stronger gets its own. The blur
 # is a Gaussian sigma in screen pixels; the tint is how opaque the theme's
@@ -173,6 +175,9 @@ def read_toml(path):
 def load_settings():
     config = read_toml(CONFIG)
     style = config.get("style", DEFAULT_STYLE)
+    if style in RENAMED_STYLES:
+        style = RENAMED_STYLES[style]
+        save_setting("style", f'"{style}"')
     if style not in STYLES:
         warn(f'unknown style "{style}" in {CONFIG}; using "{DEFAULT_STYLE}".')
         style = DEFAULT_STYLE
