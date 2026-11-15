@@ -40,6 +40,54 @@ class Blocks(unittest.TestCase):
         self.assertIn('[data-workspace-area="conversation"]', css)
         self.assertIn("100% 100%, cover", css)
 
+    def test_backdrop_drops_the_blurred_parts(self):
+        css = self.css_for("backdrop")
+        self.assertIn("var(--omarchy-wallpaper)", css)
+        self.assertIn("var(--omarchy-wallpaper) center / cover no-repeat,", css)
+        self.assertIn("backdrop-filter: blur(", css)
+        self.assertIn("var(--chat-content-max-width)", css)
+        self.assertNotIn("var(--omarchy-header-wallpaper)", css)
+        self.assertNotIn("var(--omarchy-tint)", css)
+
+    def test_backdrop_wallpaper_is_not_blurred(self):
+        calls = []
+
+        def run(command, **kwargs):
+            if command[0] == "magick":
+                calls.append(command)
+            return mock.Mock(returncode=0, stdout=b"x")
+
+        with mock.patch.object(publisher.subprocess, "run", side_effect=run), \
+                mock.patch.object(publisher, "hyprland_blur", return_value={"sigma": 30, "brightness": 0.8, "contrast": 0.9}):
+            publisher.wallpaper_css(Path("/tmp/wall.jpg"), 1000, publisher.SHARP_STEPS)
+            publisher.wallpaper_css(Path("/tmp/wall.jpg"), 1000, publisher.BACKGROUND_STEPS, 20)
+        self.assertNotIn("-blur", calls[0])
+        self.assertNotIn("Multiply", calls[0])
+        self.assertIn("-blur", calls[1])
+
+    @unittest.skipUnless(publisher.shutil.which("magick"), "needs ImageMagick")
+    def test_pixel_art_is_found_by_its_blocks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            art, photo = Path(folder) / "art.png", Path(folder) / "photo.png"
+            # 30x20 random art pixels drawn as 5x5 blocks, and the same smoothed.
+            publisher.subprocess.run(["magick", "-size", "30x20", "xc:", "+noise", "Random", "-sample", "150x100!", art], check=True)
+            publisher.subprocess.run(["magick", art, "-blur", "0x1", photo], check=True)
+            self.assertEqual(publisher.pixel_block(art, 150, 100), 5)
+            self.assertEqual(publisher.pixel_block(photo, 150, 100), 1)
+
+    def test_backdrop_tint_follows_the_wallpaper(self):
+        with mock.patch.object(publisher, "picture_luminance", return_value=0.1):
+            dark_picture = publisher.backdrop_alpha("auto", Path("/w.jpg"), "#0b1b2b")
+        with mock.patch.object(publisher, "picture_luminance", return_value=0.5):
+            bright_picture = publisher.backdrop_alpha("auto", Path("/w.jpg"), "#0b1b2b")
+        with mock.patch.object(publisher, "picture_luminance", return_value=0.3):
+            light_theme = publisher.backdrop_alpha("auto", Path("/w.jpg"), "#f4f1ea")
+        low, high = publisher.BACKDROP_TINT_BOUNDS
+        self.assertEqual(dark_picture, low)
+        self.assertEqual(bright_picture, high)
+        self.assertGreater(light_theme, low)
+        self.assertEqual(publisher.backdrop_alpha(0.3, None, "#000000"), 0.3)
+
     def test_square_corners_only_without_rounding(self):
         self.assertNotIn('[class*="rounded-xl"]', self.css_for("full", "8px"))
         self.assertIn('[class*="rounded-xl"]', self.css_for("full", "0px"))

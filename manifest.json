@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.jagrat7.omarchy-t3code-plus",
   "name": "Omarchy+ for T3 Code",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "jagrat7",
   "license": "MIT",
   "description": "Gives T3 Code the Omarchy look: the system font, Hyprland's corners and borders, the shell's menus and the theme's wallpaper, kept in step with every theme, font and wallpaper change.",

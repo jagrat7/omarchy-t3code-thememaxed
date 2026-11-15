@@ -183,10 +183,11 @@ select,
 /* Wallpaper. The sync hook supplies two pictures, blurred and tinted with
    floors that keep text readable: --omarchy-header-wallpaper is the
    wallpaper on the desktop, --omarchy-wallpaper a random one of the theme's.
-   The chosen style keeps some of the @part blocks below: minimal keeps
-   neither, full keeps the background, too-much keeps both. */
+   The chosen style keeps some of the @part blocks below: minimal keeps the
+   header, full adds the background, too-much adds the sidebar, and backdrop
+   keeps only its own. */
 
-/* Header, in every style: the desktop wallpaper sits behind the sidebar's
+/* @part header (minimal, full, too-much): the desktop wallpaper sits behind the sidebar's
    header row. The picture is scaled to the sidebar's width and the row shows
    a band from its middle, fading into the sidebar below. The header holds
    only a few labels, so it carries 55% of the tint. Change 0.45 to slice the
@@ -206,6 +207,7 @@ select,
   background-position: 0 0, 0 0, 0 var(--strip), center calc(var(--strip) / 2 - 0.45 * 0.5625 * var(--sidebar-width, 18rem)) !important;
   background-repeat: no-repeat !important;
 }
+/* @end */
 
 /* @part background (full, too-much): a random wallpaper of the theme lies
    behind the conversation, centred and tinted evenly. */
@@ -228,6 +230,56 @@ select,
     var(--omarchy-header-wallpaper) !important;
   background-size: 100% 100%, cover !important;
   background-position: 0 0, center !important;
+}
+/* @end */
+
+/* @part backdrop (backdrop): the desktop wallpaper as a scene behind the
+   conversation, sharp at the sides. The chat column is frosted glass: the
+   picture behind it blurred and tinted only as much as the wallpaper's
+   brightness needs, fading out at its edges. The picture is centred on the
+   conversation, so its middle, which the publisher softens to save room for
+   the sides, stays behind the glass. The glass sits behind the messages,
+   between the conversation's background and its content. */
+[data-workspace-area="conversation"] {
+  background:
+    linear-gradient(var(--omarchy-scene-edge), var(--omarchy-scene-edge)),
+    var(--omarchy-wallpaper) center / cover no-repeat,
+    {{ background }} !important;
+  image-rendering: var(--omarchy-wallpaper-rendering);
+  isolation: isolate;
+}
+
+[data-workspace-area="conversation"] > * {
+  image-rendering: auto;
+}
+
+[data-workspace-area="conversation"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  margin: 0 auto;
+  width: min(100%, calc(var(--chat-content-max-width) + 12rem));
+  background: var(--omarchy-scene-tint);
+  backdrop-filter: blur(24px);
+  mask-image: linear-gradient(90deg, transparent, #000 6rem, #000 calc(100% - 6rem), transparent);
+  pointer-events: none;
+}
+
+[data-user-message-bubble] {
+  background-color: var(--omarchy-scene-bubble) !important;
+  box-shadow: inset 0 0 0 1px var(--omarchy-scene-line) !important;
+}
+
+:root {
+  --glass-blur: 0px !important;
+  --glass-opacity: 100% !important;
+  --chat-composer-glass-surface: var(--omarchy-scene-card) !important;
+}
+
+[data-slot="composer-host"] {
+  background-color: var(--omarchy-scene-card) !important;
+  backdrop-filter: none !important;
 }
 /* @end */
 

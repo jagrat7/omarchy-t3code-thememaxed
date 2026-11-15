@@ -21,13 +21,16 @@ import argparse
 import base64
 import fcntl
 import json
+import math
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HOME = Path.home()
@@ -52,13 +55,37 @@ CSS_LIMIT = 20000
 # picture is shown at the sidebar's width, so it starts smaller.
 BACKGROUND_STEPS = ((960, 45), (640, 45), (640, 30), (480, 30), (320, 30))
 HEADER_STEPS = ((640, 45), (480, 40), (480, 30), (320, 30), (240, 30))
+# The backdrop style shows its one wallpaper sharp behind the conversation,
+# so it has all the room to itself. avifenc (10-bit, slow, tuned for SSIM)
+# packs far more detail into that room than ImageMagick, so it is used when
+# installed: the widest picture that holds SHARP_GOOD_QUALITY within the room,
+# at the best quality that still fits. Without it, the first of SHARP_STEPS
+# that fits.
+SHARP_WIDTHS = (1920, 1600, 1280, 960)
+SHARP_GOOD_QUALITY = 20
+SHARP_STEPS = (
+    (1920, 35), (1600, 35), (1600, 25), (1280, 30), (1280, 20), (960, 25), (960, 15), (640, 20),
+)
+# The middle of the picture lies behind the frosted chat column, where T3 Code
+# blurs it anyway, so it is softened before encoding: detail there would only
+# take room from the sides. SOFT_MIDDLE is the softened band, as fractions of
+# the width, narrower than the column at any usual window size; its edges fade
+# over SOFT_FADE of the width, and SOFT_BLUR is the blur as a fraction too.
+SOFT_MIDDLE = (0.4, 0.6)
+SOFT_FADE = 0.015
+SOFT_BLUR = 0.01
+# Pixel art drawn at a whole-number scale (each art pixel a block of screen
+# pixels) is sent at its own size and scaled up by T3 Code with hard edges,
+# which keeps it crisp in a fraction of the room. Blocks up to this size are
+# looked for.
+PIXEL_ART_MAX_BLOCK = 16
 
-# Which of the CSS template's optional parts each style keeps. The header is
-# in every style.
+# Which of the CSS template's optional parts each style keeps.
 STYLES = {
-    "minimal": set(),
-    "full": {"background"},
-    "too-much": {"background", "sidebar"},
+    "minimal": {"header"},
+    "full": {"header", "background"},
+    "too-much": {"header", "background", "sidebar"},
+    "backdrop": {"backdrop"},
 }
 DEFAULT_STYLE = "full"
 # The least the wallpaper is blurred and tinted, so text stays readable on any
@@ -67,6 +94,18 @@ DEFAULT_STYLE = "full"
 # ground is over the picture, from 0 to 1. Both can be set in CONFIG.
 MIN_BLUR = 20
 MIN_TINT = 0.75
+# The backdrop style tints its frosted chat column only as much as the
+# wallpaper's brightness needs: a dark picture is left nearly as it is, as
+# Claude's scenes are, and a bright one is dimmed to about their brightness.
+# The scene at the column's sides takes a third of that. The bounds keep a
+# little help for text and never hide the picture. Set a fixed tint in CONFIG
+# as backdrop_tint.
+BACKDROP_TINT = "auto"
+BACKDROP_TINT_BOUNDS = (0.1, 0.65)
+# Mean brightness, 0 to 1, that text reads well on: just above the theme's
+# background, and no darker (dark themes) or lighter (light ones) than this.
+BACKDROP_DARK_TARGET = 0.15
+BACKDROP_LIGHT_TARGET = 0.85
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".bmp"}
 
 CONFIG_TEMPLATE = """\
@@ -76,12 +115,18 @@ CONFIG_TEMPLATE = """\
 # minimal:  the desktop wallpaper behind the sidebar's header
 # full:     the header, plus a random theme wallpaper behind the conversation
 # too-much: the header and conversation, plus the wallpaper down the sidebar
+# backdrop: the desktop wallpaper, sharp, behind a frosted chat column
 style = "{style}"
 
 # Readability floors for the wallpaper. The theme's own blur (Hyprland) or
 # tint (the shell's menu scrim) is used instead when it is stronger.
 # min_blur = 20     # Gaussian sigma, in screen pixels
 # min_tint = 0.75   # opacity of the theme background over the picture, 0 to 1
+
+# backdrop only: how much the theme background covers the wallpaper behind
+# the chat column, 0 to 1 (the sides take a third). "auto" sets it from the
+# wallpaper's brightness.
+# backdrop_tint = "auto"
 """
 
 
@@ -114,6 +159,8 @@ def load_settings():
         "style": style,
         "min_blur": number("min_blur", MIN_BLUR, 0, 200),
         "min_tint": number("min_tint", MIN_TINT, 0, 1),
+        "backdrop_tint": "auto" if config.get("backdrop_tint", BACKDROP_TINT) == "auto"
+        else number("backdrop_tint", BACKDROP_TINT, 0, 1),
     }
 
 
@@ -278,12 +325,221 @@ def random_wallpaper():
     return random.choice(wallpapers) if wallpapers else desktop_wallpaper()
 
 
-def wallpaper_css(source, budget, steps, min_blur):
-    """The wallpaper as a CSS image of at most `budget` characters, or "none"."""
+def luminance(red, green, blue):
+    """Rec. 709 luma of 0-255 sRGB values, from 0 to 1, as ImageMagick's Gray."""
+    return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
+
+
+def hex_luminance(value):
+    match = re.fullmatch(r"#?([0-9a-fA-F]{6})", str(value).strip())
+    if not match:
+        return None
+    digits = match.group(1)
+    return luminance(*(int(digits[i : i + 2], 16) for i in (0, 2, 4)))
+
+
+def picture_luminance(source):
+    try:
+        value = command_output("magick", f"{source}[0]", "-sample", "128x", "-colorspace", "Gray", "-format", "%[fx:mean]", "info:")
+        return float(value)
+    except ValueError:
+        return None
+
+
+def backdrop_alpha(setting, source, background):
+    """How opaque the theme background is over the backdrop wallpaper."""
+    if setting != "auto":
+        return float(setting)
+    low, high = BACKDROP_TINT_BOUNDS
+    picture = picture_luminance(source) if source else None
+    ground = hex_luminance(background)
+    if picture is None or ground is None:
+        return high
+    if ground < 0.5:
+        target = max(BACKDROP_DARK_TARGET, ground + 0.04)
+        alpha = (picture - target) / (picture - ground) if picture > target else 0
+    else:
+        target = min(BACKDROP_LIGHT_TARGET, ground - 0.04)
+        alpha = (target - picture) / (ground - picture) if picture < target else 0
+    return min(max(alpha, low), high)
+
+
+def in_parallel(function, items):
+    """function(item) for each item, run side by side, in order."""
+    items = list(items)
+    with ThreadPoolExecutor(max_workers=max(1, len(items))) as pool:
+        return list(pool.map(function, items))
+
+
+def picture_size(source):
+    """The width and height of the picture at `source`, or None."""
+    size = command_output("magick", "identify", "-format", "%w %h", f"{source}[0]").split()
+    return (int(size[0]), int(size[1])) if len(size) == 2 and all(n.isdigit() for n in size) else None
+
+
+def pixel_block(source, width, height):
+    """The side of the square each pixel of pixel art is drawn as, or 1 for any other picture."""
+
+    def exact(block):
+        # Shrunk to one pixel per block and grown back, pixel art comes back as it was.
+        command = [
+            "magick", f"{source}[0]", "(", "+clone", "-sample", f"{width // block}x{height // block}!",
+            "-sample", f"{width}x{height}!", ")", "-fuzz", "1%", "-metric", "AE", "-compare",
+            "-format", "%[distortion]", "info:",
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+            return result.returncode == 0 and float(result.stdout) <= 0.0002
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return False
+
+    blocks = [block for block in range(2, PIXEL_ART_MAX_BLOCK + 1) if width % block == 0 and height % block == 0]
+    # Art drawn in blocks of n is also drawn in blocks of each factor of n, so
+    # a picture that no prime passes is not pixel art; most pictures stop here.
+    primes = [block for block in blocks if all(block % factor for factor in range(2, block))]
+    on_primes = in_parallel(exact, primes)
+    if not any(on_primes):
+        return 1
+    others = [block for block in blocks if block not in primes]
+    passed = [block for block, ok in zip(primes + others, on_primes + in_parallel(exact, others)) if ok]
+    return max(passed, default=1)
+
+
+def sharp_wallpaper_css(source, budget):
+    """The wallpaper unblurred but for its middle, as large and clean as `budget` characters allow.
+
+    Returns the CSS image ("none" without one) and how T3 Code should scale it
+    up: "pixelated" for pixel art, otherwise "auto".
+    """
+    if source is None:
+        return "none", "auto"
+    if not shutil.which("avifenc"):
+        return wallpaper_css(source, budget, SHARP_STEPS), "auto"
+    size = picture_size(source)
+    if size is None:
+        return "none", "auto"
+    block = pixel_block(source, *size)
+
+    def as_css(kind, data):
+        return f'url("data:image/{kind};base64,{base64.b64encode(data).decode()}")'
+
+    def room(kind):
+        return (budget - len(as_css(kind, b""))) * 3 // 4
+
+    with tempfile.TemporaryDirectory() as folder:
+
+        def picture(width, soften=True):
+            """The wallpaper at `width` as a PNG, its middle softened, or None."""
+            height = round(size[1] * width / size[0])
+            png = Path(folder) / f"{width}{'s' if soften else ''}.png"
+            # -sample keeps pixel art's hard edges; photos are resized smoothly.
+            command = ["magick", f"{source}[0]", "-sample" if block > 1 else "-resize", f"{width}x{height}!", "-strip"]
+            if soften:
+                # Blurred at a quarter of the size, which looks the same and
+                # is far quicker, then laid over the middle through a band
+                # that fades at its edges.
+                left, right = (round(width * edge) for edge in SOFT_MIDDLE)
+                command += [
+                    "(", "+clone", "-scale", "25%", "-blur", f"0x{width * SOFT_BLUR / 4:.3g}", "-resize", f"{width}x{height}!",
+                    "(", "-size", f"{width}x1", "xc:black", "-fill", "white", "-draw", f"rectangle {left},0 {right},0",
+                    "-blur", f"0x{width * SOFT_FADE:.3g}", "-scale", f"{width}x{height}!", ")",
+                    "-alpha", "off", "-compose", "CopyOpacity", "-composite", ")",
+                    "-compose", "Over", "-composite", "-alpha", "off",
+                ]
+            try:
+                result = subprocess.run([*command, str(png)], capture_output=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                return None
+            return png if result.returncode == 0 else None
+
+        def encode(png, quality):
+            out = Path(folder) / f"{png.stem}-{quality}.avif"
+            command = ["avifenc", "-q", str(quality), "-s", "3", "-d", "10", "-y", "420", "-a", "tune=ssim", str(png), str(out)]
+            try:
+                result = subprocess.run(command, capture_output=True, timeout=60)
+            except (OSError, subprocess.TimeoutExpired):
+                return None
+            return out.read_bytes() if result.returncode == 0 and out.is_file() else None
+
+        def best_fit(png, low, high, tried=None):
+            """The highest quality from low to high whose picture fits, as (quality, bytes).
+
+            `tried` maps qualities already encoded to their sizes. A picture
+            grows about exponentially with quality, so once one try fits and
+            one does not, the next aims where the two say the room runs out:
+            three or four tries where halving the range would take six or seven.
+            """
+            tried = dict(tried or {})
+            target = room("avif")
+            found = None
+            while low <= high:
+                fits = max((quality for quality, length in tried.items() if length <= target), default=None)
+                over = min((quality for quality, length in tried.items() if length > target), default=None)
+                if fits is not None and over is not None and over > fits and tried[fits] > 0:
+                    growth = math.log(tried[over] / tried[fits]) / (over - fits)
+                    quality = fits + math.log(target / tried[fits]) / growth if growth > 0 else low
+                    quality = min(max(int(quality), low), high)
+                else:
+                    quality = (low + high) // 2
+                data = encode(png, quality)
+                if data is None:
+                    return found
+                tried[quality] = len(data)
+                if len(data) <= target:
+                    found, low = (quality, data), quality + 1
+                else:
+                    high = quality - 1
+            return found
+
+        if block > 1:
+            # Pixel art at its own size: whole when lossless WebP fits, which
+            # keeps every pixel exact, otherwise the best AVIF that fits.
+            native = size[0] // block
+            png = picture(native, soften=False)
+            if png is None:
+                return "none", "auto"
+            try:
+                webp = subprocess.run(
+                    ["magick", str(png), "-define", "webp:lossless=true", "-define", "webp:method=6", "webp:-"],
+                    capture_output=True, timeout=30,
+                ).stdout
+            except (OSError, subprocess.TimeoutExpired):
+                webp = b""
+            if webp and len(webp) <= room("webp"):
+                return as_css("webp", webp), "pixelated"
+            png = picture(native)
+            chosen = png and best_fit(png, 0, 95)
+            if chosen:
+                return as_css("avif", chosen[1]), "pixelated"
+
+        # Every width is prepared and tried at the good quality side by side
+        # (never wider than the picture itself); the widest that holds it wins.
+        widths = list(dict.fromkeys(min(width, size[0]) for width in SHARP_WIDTHS))
+        pngs = in_parallel(picture, widths)
+        if None in pngs:
+            return "none", "auto"
+        goods = in_parallel(lambda png: encode(png, SHARP_GOOD_QUALITY), pngs)
+        for png, good in zip(pngs, goods):
+            if good is not None and len(good) <= room("avif"):
+                chosen = best_fit(png, SHARP_GOOD_QUALITY + 1, 90, {SHARP_GOOD_QUALITY: len(good)}) or (SHARP_GOOD_QUALITY, good)
+                break
+        else:
+            # Not even the smallest width holds a good quality: the best it can.
+            chosen = best_fit(pngs[-1], 0, SHARP_GOOD_QUALITY - 1, {SHARP_GOOD_QUALITY: len(goods[-1] or b"x" * (room("avif") + 1))})
+    if chosen is None:
+        return "none", "auto"
+    return as_css("avif", chosen[1]), "auto"
+
+
+def wallpaper_css(source, budget, steps, min_blur=None):
+    """The wallpaper as a CSS image of at most `budget` characters, or "none".
+
+    With min_blur None the picture is kept sharp and its colours untouched.
+    """
     if source is None:
         return "none"
-    blur = hyprland_blur()
-    sigma = max(blur["sigma"] if blur else 0, min_blur)
+    blur = hyprland_blur() if min_blur is not None else None
+    sigma = max(blur["sigma"] if blur else 0, min_blur or 0)
     screen = screen_width()
     for width, quality in steps:
         # [0]: the first frame, should the file be animated.
@@ -360,6 +616,15 @@ def omarchy_variables(settings):
     tint_color = scrim.get("scrim", background) if tint_alpha > min_tint else background
     tint = css_color(str(tint_color), tint_alpha) or css_color(background, tint_alpha) or "transparent"
 
+    # The backdrop style's cards, of the theme's own colours. The chat
+    # column's tint depends on the wallpaper, so build_css adds it.
+    scene_values = {
+        "scene-card": css_color(background, 0.85),
+        "scene-bubble": css_color(background, 0.45),
+        "scene-line": css_color(foreground, 0.16),
+    }
+    scene_values = {name: value or "transparent" for name, value in scene_values.items()}
+
     font = command_output("fc-match", "monospace", "-f", "%{family}").split(",")[0].strip()
     font = json.dumps(font) if font else "monospace"
 
@@ -381,6 +646,7 @@ def omarchy_variables(settings):
         "row-border-right": f"{right:g}px",
         "row-border-bottom": f"{bottom:g}px",
         "row-border-left": f"{left:g}px",
+        **scene_values,
     }
 
 
@@ -424,15 +690,30 @@ def build_css(settings):
         keep.add("square")
     css = keep_blocks(css, keep)
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
-    css = re.sub(r"\s*\n\s*", "\n", css).strip()
+    # Every character counts against the limit the wallpaper shares, so the
+    # whitespace goes. Spaces before a colon are kept: in a selector they mean
+    # a descendant.
+    css = re.sub(r"\s+", " ", css)
+    css = re.sub(r" ?([{};,]) ?", r"\1", css)
+    css = re.sub(r": ", ":", css).replace(" !important", "!important").strip()
 
     if unresolved := sorted(set(re.findall(r"\{\{\s*\w+\s*\}\}", css))):
         warn(f"the theme has no value for {', '.join(unresolved)}; publishing the palette without CSS.")
         return None
 
+    if "backdrop" in keep:
+        colors = read_toml(THEME_DIR / "colors.toml")
+        background = colors.get("background", "#000000")
+        alpha = backdrop_alpha(settings.get("backdrop_tint", BACKDROP_TINT), desktop_wallpaper(), background)
+        # The chat column takes the full tint; the scene at its sides a third.
+        variables["scene-tint"] = css_color(background, alpha) or "transparent"
+        variables["scene-edge"] = css_color(background, alpha / 3) or "transparent"
+
     def with_variables():
-        declarations = "".join(f"--omarchy-{name}: {value};\n" for name, value in variables.items())
-        return f":root {{\n{declarations}}}\n{css}"
+        # Only the values this style uses, to leave the wallpaper more room.
+        used = {name: value for name, value in variables.items() if f"var(--omarchy-{name})" in css}
+        declarations = "".join(f"--omarchy-{name}:{value};" for name, value in used.items())
+        return f":root{{{declarations}}}{css}"
 
     # The header always shows the desktop wallpaper; the conversation a random
     # one. Each is encoded only if the style uses it, and the header's picture
@@ -446,7 +727,13 @@ def build_css(settings):
         variables["header-wallpaper"] = wallpaper_css(desktop_wallpaper(), share, HEADER_STEPS, settings["min_blur"])
     if wants_background:
         free = CSS_LIMIT - len(with_variables())
-        variables["wallpaper"] = wallpaper_css(random_wallpaper(), free, BACKGROUND_STEPS, settings["min_blur"])
+        if "backdrop" in keep:
+            # Sized as if pixelated, the longer of the two renderings.
+            variables["wallpaper-rendering"] = "pixelated"
+            free = CSS_LIMIT - len(with_variables())
+            variables["wallpaper"], variables["wallpaper-rendering"] = sharp_wallpaper_css(desktop_wallpaper(), free)
+        else:
+            variables["wallpaper"] = wallpaper_css(random_wallpaper(), free, BACKGROUND_STEPS, settings["min_blur"])
     css = with_variables()
     if len(css) > CSS_LIMIT:
         warn(f"the CSS is {len(css)} characters, over T3 Code's {CSS_LIMIT} limit; publishing the palette without it.")
@@ -499,7 +786,8 @@ def main():
         "--style",
         choices=list(STYLES),
         help="switch style and remember it: minimal (header), full (header and "
-        "conversation background) or too-much (the sidebar as well)",
+        "conversation background), too-much (the sidebar as well) or backdrop "
+        "(the sharp desktop wallpaper behind a frosted chat column)",
     )
     args = parser.parse_args()
     # A first run writes the config with its defaults, so there is a file to edit.

@@ -28,26 +28,45 @@ desktop changes.
 
 ## Styles
 
-The wallpaper comes in three strengths:
+The wallpaper comes in three strengths, plus a sharp alternative to `full`:
 
 | Style | Sidebar header | Conversation | Sidebar |
 | --- | --- | --- | --- |
 | `minimal` | Desktop wallpaper | Plain | Plain |
 | `full` (default) | Desktop wallpaper | Random theme wallpaper | Plain |
 | `too-much` | Desktop wallpaper | Random theme wallpaper | Desktop wallpaper |
+| `backdrop` | Plain | Desktop wallpaper, sharp, behind a frosted chat column | Plain |
 
 The header shows the wallpaper on your desktop and changes with it. The
 conversation gets a random one of the theme's wallpapers each time the theme
 is republished. Every picture is blurred and tinted enough to keep text
 readable, more if the theme's own blur or scrim is stronger.
 
+`backdrop` is the look of Claude Code's desktop themes: the wallpaper on your
+desktop, not blurred, as the scene behind the conversation, with the chat
+column as frosted glass over it. The glass blurs and tints the picture behind
+the messages and fades out at its edges, so the scene stays sharp at the
+sides. Its tint follows the wallpaper: a dark one is left almost as it is, a
+bright one is dimmed just enough to read on. Your messages are outlined rather
+than filled, and the composer is a dark card.
+
+T3 Code caps a theme's CSS at 20,000 characters and accepts pictures only
+inside it, so the wallpaper is squeezed into what is left, about 10 KB. With
+`avifenc` installed (from `libavif`) it is a 10-bit AVIF of up to 1920 pixels
+at the best quality that fits. The middle, which sits behind the glass anyway,
+is softened before encoding, which frees about a third of the bytes for the
+sharp sides. Pixel art is found by its blocks and sent at its own size, then
+scaled up with hard edges: whole as lossless WebP when that fits, otherwise as
+AVIF. Without `avifenc`, a smaller ImageMagick picture is used.
+
 Pick a style in `~/.config/omarchy-t3code-plus/config.toml`. The plugin
 applies the file as soon as it is saved:
 
 ```toml
-style = "full"     # minimal, full or too-much
-min_blur = 20      # least blur, as a Gaussian sigma in screen pixels
-min_tint = 0.75    # least opacity of the theme background over the picture
+style = "full"         # minimal, full, too-much or backdrop
+min_blur = 20          # least blur, as a Gaussian sigma in screen pixels
+min_tint = 0.75        # least opacity of the theme background over the picture
+backdrop_tint = "auto" # backdrop only: tint, 0 to 1, or "auto" from the wallpaper
 ```
 
 Or from a terminal, which also deals a new random wallpaper:
@@ -88,7 +107,7 @@ or the other, not both.
 
 ```bash
 git clone https://github.com/jagrat7/omarchy-t3code-thememaxed.git
-bash omarchy-t3code-thememaxed/scripts/install.sh full    # or minimal, or too-much
+bash omarchy-t3code-thememaxed/scripts/install.sh full    # or minimal, too-much, backdrop
 ```
 
 This puts `t3code-omarchy-plus` in `~/.local/bin` and adds `theme-set` and

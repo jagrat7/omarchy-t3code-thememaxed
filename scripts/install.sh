@@ -2,7 +2,7 @@
 # Install Omarchy+ for T3 Code without the plugin: Omarchy hooks republish the
 # theme on theme and font changes. Use either this or the plugin, not both.
 #
-#   bash scripts/install.sh [minimal|full|too-much]
+#   bash scripts/install.sh [minimal|full|too-much|backdrop]
 #
 # Works from a checkout, or piped from curl (it then clones the repo itself).
 # https://github.com/jagrat7/omarchy-t3code-thememaxed
@@ -29,18 +29,19 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/install.sh [minimal|full|too-much]
+Usage: bash scripts/install.sh [minimal|full|too-much|backdrop]
 
   minimal   the desktop wallpaper behind the sidebar's header
   full      the header, plus a random theme wallpaper behind the conversation
   too-much  the header and conversation, plus the wallpaper down the sidebar
+  backdrop  the desktop wallpaper, sharp, behind a frosted chat column
 
 Without a style, a new install gets "full" and an update keeps its style.
 EOF
 }
 
 case $STYLE in
-  "" | minimal | full | too-much) ;;
+  "" | minimal | full | too-much | backdrop) ;;
   -h | --help)
     usage
     exit 0
@@ -146,6 +147,6 @@ else
   say "then choose Settings > Appearance > Omarchy+."
 fi
 say ""
-say "  Switch style:          t3code-omarchy-plus --style minimal|full|too-much"
+say "  Switch style:          t3code-omarchy-plus --style minimal|full|too-much|backdrop"
 say "  After a new wallpaper: t3code-omarchy-plus"
 say "  Settings:              ${config/#$HOME/\~}"
