@@ -1,410 +1,298 @@
-"""Tests for bin/t3code-omarchy-plus. Run: python3 -m unittest discover -s tests -v"""
+"""Run the publisher CLI with isolated homes and real image encoders."""
 
+import base64
 import importlib.machinery
 import importlib.util
 import json
+import math
+import re
+import shlex
+import shutil
+import subprocess
+import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
-loader = importlib.machinery.SourceFileLoader("publisher", str(ROOT / "bin/t3code-omarchy-plus"))
-spec = importlib.util.spec_from_loader("publisher", loader)
-publisher = importlib.util.module_from_spec(spec)
-loader.exec_module(publisher)
-
-TEMPLATE = (ROOT / "themed/t3code.css.tpl").read_text()
+PUBLISHER = ROOT / "bin/t3code-omarchy-plus"
+MAGICK = shutil.which("magick")
+AVIFENC = shutil.which("avifenc")
 
 
-class Blocks(unittest.TestCase):
-    def css_for(self, style, radius="4px"):
-        keep = set(publisher.STYLES[style])
-        if radius == "0px":
-            keep.add("square")
-        return publisher.keep_blocks(TEMPLATE, keep)
-
-    def test_minimal_keeps_only_the_header(self):
-        css = self.css_for("minimal")
-        self.assertIn("var(--omarchy-header-wallpaper)", css)
-        self.assertNotIn("var(--omarchy-wallpaper)", css)
-        self.assertNotIn("100% 100%, cover", css)
-
-    def test_full_adds_the_conversation(self):
-        css = self.css_for("full")
-        self.assertIn('[data-workspace-area="conversation"]', css)
-        self.assertNotIn("100% 100%, cover", css)
-
-    def test_max_adds_the_sidebar(self):
-        css = self.css_for("max")
-        self.assertIn('[data-workspace-area="conversation"]', css)
-        self.assertIn("100% 100%, cover", css)
-
-    def test_full_alt_drops_the_blurred_parts(self):
-        css = self.css_for("full-alt")
-        self.assertIn("var(--omarchy-wallpaper)", css)
-        self.assertIn("var(--omarchy-wallpaper) center / cover no-repeat,", css)
-        self.assertIn("backdrop-filter: blur(", css)
-        self.assertIn("var(--chat-content-max-width)", css)
-        self.assertNotIn("var(--omarchy-header-wallpaper)", css)
-        self.assertNotIn("var(--omarchy-tint)", css)
-
-    def test_full_alt_wallpaper_is_not_blurred(self):
-        calls = []
-
-        def run(command, **kwargs):
-            if command[0] == "magick" and command[1] != "identify":
-                calls.append(command)
-            return mock.Mock(returncode=0, stdout=b"x")
-
-        with mock.patch.object(publisher.subprocess, "run", side_effect=run), \
-                mock.patch.object(publisher, "hyprland_blur", return_value={"sigma": 30, "brightness": 0.8, "contrast": 0.9}):
-            publisher.wallpaper_css(Path("/tmp/wall.jpg"), 1000, publisher.SHARP_STEPS)
-            publisher.wallpaper_css(Path("/tmp/wall.jpg"), 1000, publisher.BACKGROUND_STEPS, 20)
-        self.assertNotIn("-blur", calls[0])
-        self.assertNotIn("Multiply", calls[0])
-        self.assertIn("-blur", calls[1])
-
-    @unittest.skipUnless(publisher.shutil.which("magick"), "needs ImageMagick")
-    def test_pixel_art_is_found_by_its_blocks(self):
-        with tempfile.TemporaryDirectory() as folder:
-            art, photo = Path(folder) / "art.png", Path(folder) / "photo.png"
-            # 30x20 random art pixels drawn as 5x5 blocks, and the same smoothed.
-            publisher.subprocess.run(["magick", "-size", "30x20", "xc:", "+noise", "Random", "-sample", "150x100!", art], check=True)
-            publisher.subprocess.run(["magick", art, "-blur", "0x1", photo], check=True)
-            self.assertEqual(publisher.pixel_block(art, 150, 100), 5)
-            self.assertEqual(publisher.pixel_block(photo, 150, 100), 1)
-
-    def test_settings_are_saved_in_place(self):
-        with tempfile.TemporaryDirectory() as folder, \
-                mock.patch.object(publisher, "CONFIG", Path(folder) / "config.toml"):
-            publisher.save_setting("style", '"full-alt"')
-            publisher.save_setting("backdrop_tint", "0.3")
-            publisher.save_setting("backdrop_tint", '"auto"')
-            lines = [line for line in publisher.CONFIG.read_text().splitlines() if line and not line.startswith("#")]
-        self.assertEqual(lines, ['style = "full-alt"', 'backdrop_tint = "auto"'])
-
-    def test_tint_takes_auto_or_a_fraction(self):
-        self.assertEqual(publisher.tint_value("auto"), "auto")
-        self.assertEqual(publisher.tint_value("0.35"), "0.35")
-        for wrong in ("2", "-0.1", "dark"):
-            with self.assertRaises(publisher.argparse.ArgumentTypeError):
-                publisher.tint_value(wrong)
-
-    def test_backdrop_tint_follows_the_wallpaper(self):
-        with mock.patch.object(publisher, "picture_luminance", return_value=0.1):
-            dark_picture = publisher.backdrop_alpha("auto", Path("/w.jpg"), "#0b1b2b")
-        with mock.patch.object(publisher, "picture_luminance", return_value=0.5):
-            bright_picture = publisher.backdrop_alpha("auto", Path("/w.jpg"), "#0b1b2b")
-        with mock.patch.object(publisher, "picture_luminance", return_value=0.3):
-            light_theme = publisher.backdrop_alpha("auto", Path("/w.jpg"), "#f4f1ea")
-        low, high = publisher.BACKDROP_TINT_BOUNDS
-        self.assertEqual(dark_picture, low)
-        self.assertEqual(bright_picture, high)
-        self.assertGreater(light_theme, low)
-        self.assertEqual(publisher.backdrop_alpha(0.3, None, "#000000"), 0.3)
-
-    def test_square_corners_only_without_rounding(self):
-        self.assertNotIn('[class*="rounded-xl"]', self.css_for("full", "8px"))
-        self.assertIn('[class*="rounded-xl"]', self.css_for("full", "0px"))
-
-    def test_no_markers_survive(self):
-        for style in publisher.STYLES:
-            self.assertNotIn("@end", self.css_for(style))
-
-
-class Rendering(unittest.TestCase):
-    def test_values_offer_omarchys_three_forms(self):
-        output = "accent\t#2a78b0\nmode\tdark\n"
-        with mock.patch.object(publisher, "command_output", return_value=output):
-            values = publisher.theme_values()
-        self.assertEqual(values["accent"], "#2a78b0")
-        self.assertEqual(values["accent_strip"], "2a78b0")
-        self.assertEqual(values["accent_rgb"], "42,120,176")
-        self.assertEqual(values["mode"], "dark")
-        self.assertNotIn("mode_rgb", values)
-
-    def test_unknown_tokens_are_left_for_the_check(self):
-        rendered = publisher.render_template("a {{ accent }} b {{ nope }}", {"accent": "#fff"})
-        self.assertEqual(rendered, "a #fff b {{ nope }}")
-
-    def test_every_template_token_is_a_theme_key(self):
-        tokens = set(publisher.re.findall(r"\{\{\s*(\w+)\s*\}\}", publisher.re.sub(r"/\*.*?\*/", "", TEMPLATE, flags=publisher.re.S)))
-        known = {"background", "dark_background", "foreground", "accent", "selection_background", "selection_foreground"}
-        known |= {f"{bright}{name}" for bright in ("", "bright_") for name in ("red", "green", "yellow", "blue", "magenta", "cyan")}
-        known.add("orange")
-        self.assertLessEqual(tokens, known)
-
-
-class Colors(unittest.TestCase):
-    def test_hyprland_and_hex_forms(self):
-        self.assertEqual(publisher.css_color("rgb(ed9998)"), "#ed9998")
-        self.assertEqual(publisher.css_color("rgba(665f5899)"), "rgb(102 95 88 / 0.6)")
-        self.assertEqual(publisher.css_color("0xffed9998"), "#ed9998")
-        self.assertEqual(publisher.css_color("#ed9998", 0.5), "rgb(237 153 152 / 0.5)")
-        self.assertIsNone(publisher.css_color("red"))
-
-    def test_hyprland_options_come_from_one_batch(self):
-        answers = '{"option": "decoration:rounding", "int": 12, "set": true }\n\n\nno such option\n\n\n' \
-            '{"option": "decoration:blur:brightness", "float": 0.75, "set": true }'
-        with mock.patch.object(publisher, "command_output", return_value=answers) as hyprctl:
-            options = publisher.hyprland_options.__wrapped__()
-        self.assertEqual(hyprctl.call_count, 1)
-        self.assertEqual(options["decoration:rounding"], 12)
-        self.assertEqual(options["decoration:blur:brightness"], 0.75)
-        self.assertEqual(options["general:border_size"], publisher.HYPRLAND_DEFAULTS["general:border_size"])
-
-    def test_gradient_angle_turns_to_css(self):
-        colors, angle = publisher.parse_border("rgb(ed9998) rgb(fbe4c5) 45deg")
-        self.assertEqual(publisher.css_gradient(colors, angle), "linear-gradient(135deg, #ed9998, #fbe4c5)")
-
-
-class Settings(unittest.TestCase):
+@unittest.skipUnless(MAGICK, "needs ImageMagick with AVIF support")
+class Publisher(unittest.TestCase):
     def setUp(self):
-        self.folder = tempfile.TemporaryDirectory()
-        self.config = Path(self.folder.name) / "config.toml"
-        patcher = mock.patch.object(publisher, "CONFIG", self.config)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.addCleanup(self.folder.cleanup)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name)
+        self.bin = self.home / "bin"
+        self.bin.mkdir()
+        self.env = {
+            "HOME": str(self.home), "PATH": str(self.bin), "LC_ALL": "C",
+            **{f"XDG_{name}_HOME": str(self.home / name.lower()) for name in ("CONFIG", "STATE", "CACHE", "DATA")},
+            "XDG_RUNTIME_DIR": str(self.home / "runtime"), "TMPDIR": str(self.home / "tmp"),
+        }
+        for key, value in self.env.items():
+            if key.startswith("XDG_") or key == "TMPDIR":
+                Path(value).mkdir(parents=True)
+        self.current = self.home / "state/omarchy/current"
+        self.theme = self.current / "theme"
+        self.backgrounds = self.theme / "backgrounds"
+        self.backgrounds.mkdir(parents=True)
+        self.target = self.home / ".t3/userdata/themes/omarchy-plus.json"
+        self.target.parent.mkdir(parents=True)
+        self.status = self.home / "state/omarchy-t3code-plus/status.json"
+        self.cache = self.status.with_name("sharp-cache.json")
+        self.config = self.home / "config/omarchy-t3code-plus/config.toml"
+        self.config.parent.mkdir(parents=True)
+        self.log = self.home / "commands.log"
+        colors = {
+            "background": "#101820", "dark_background": "#080c10",
+            "foreground": "#e8e0d8", "accent": "#90b0d0",
+            "selection_background": "#304050", "selection_foreground": "#ffffff", "orange": "#d09050",
+        }
+        for index, name in enumerate(("red", "green", "yellow", "blue", "magenta", "cyan")):
+            colors[name] = f"#{index + 8:x}08090"
+            colors[f"bright_{name}"] = f"#{index + 8:x}0a0b0"
+        (self.theme / "colors.toml").write_text("".join(f'{key} = "{value}"\n' for key, value in colors.items()))
+        (self.theme / "shell.toml").write_text(
+            '[menu]\nselected-border = "rgb(90b0d0) rgb(e8e0d8) 45deg"\n'
+            'selected-border-width = "1 2 3 4"\nscrim-alpha = 0.8\n'
+        )
+        self.palette = {"name": "Omarchy", "canvas": colors["background"], "css": "stale"}
+        (self.theme / "t3code.json").write_text(json.dumps(self.palette))
+        (self.current / "theme.name").write_text("fixture")
+        self.tool("fc-match", "printf 'Fixture Mono,monospace'")
+        self.tool("hyprctl", """case "$*" in
+  *--batch*) printf '%s' '{"option":"decoration:rounding","int":12}
 
-    def test_first_save_writes_the_commented_defaults(self):
-        publisher.save_setting("style", '"minimal"')
-        text = self.config.read_text()
-        self.assertIn('style = "minimal"', text)
-        self.assertIn("# min_blur", text)
 
-    def test_saving_keeps_the_rest_of_the_file(self):
-        self.config.write_text('style = "full"\nmin_tint = 0.9\n')
-        publisher.save_setting("style", '"max"')
-        self.assertEqual(self.config.read_text(), 'style = "max"\nmin_tint = 0.9\n')
-        settings = publisher.load_settings()
-        self.assertEqual(settings["style"], "max")
-        self.assertEqual(settings["min_tint"], 0.9)
+{"option":"general:border_size","int":3}' ;;
+  *) printf '%s' '[{"name":"fixture","width":1920,"scale":1,"focused":true}]' ;;
+esac""")
+        self.tool("omarchy-theme-color", f"""exec {shlex.quote(sys.executable)} -c '
+import sys, tomllib
+with open(sys.argv[1], "rb") as source:
+    for key, value in tomllib.load(source).items():
+        print(key, value, sep="\\t")
+' "$2"
+""")
+        self.tool("magick", f'exec {shlex.quote(MAGICK)} "$@"')
+        if AVIFENC:
+            self.tool("avifenc", f'exec {shlex.quote(AVIFENC)} "$@"')
+        self.tool("nice", "exit 0")
+        self.walls = []
+        for index, color in enumerate(("#90b0d0", "#d09050", "#509070", "#905070")):
+            path = self.backgrounds / f"{index}.png"
+            subprocess.run([MAGICK, "-size", "160x90", f"gradient:{color}-#101820", "-seed", str(index), "+noise", "Random", str(path)],
+                           env=self.env, check=True, capture_output=True)
+            self.walls.append(path)
+        (self.current / "background").symlink_to(self.walls[1])
 
-    def test_renamed_styles_move_to_their_new_names(self):
+    def tool(self, name, body):
+        path = self.bin / name
+        path.write_text(f"#!/bin/sh\nprintf '%s\\n' {shlex.quote(name)} \"$*\" >> {shlex.quote(str(self.log))}\n{body}\n")
+        path.chmod(0o755)
+
+    def publish(self, *args):
+        result = subprocess.run([sys.executable, str(PUBLISHER), *args], env=self.env,
+                                text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result
+
+    def output(self, style):
+        theme = json.loads(self.target.read_text())
+        status = json.loads(self.status.read_text())
+        self.assertEqual(theme["name"], "Thememaxed")
+        self.assertEqual(theme["canvas"], self.palette["canvas"])
+        css = theme["css"]
+        self.assertLessEqual(len(css), 50000)
+        self.assertNotRegex(css, r"\{\{|\}\}|@end")
+        self.assertEqual(status["chars"], len(css))
+        self.assertEqual(status["style"], style)
+        self.assertEqual(status["limit"], 50000)
+        self.assertTrue(status["published"])
+        self.assertEqual(status["theme"], "fixture")
+        self.assertIsInstance(status["time"], int)
+        self.assertIn("backdropTint", status)
+        self.assertIn("rendering", status)
+        return css, status
+
+    def one_wallpaper(self):
+        for path in self.walls[1:]:
+            path.unlink()
+
+    def test_styles_publish_real_images_and_shell_values(self):
+        self.one_wallpaper()
+        for style in ("minimal", "full", "max", "full-alt"):
+            with self.subTest(style=style):
+                self.publish("--style", style)
+                css, status = self.output(style)
+                self.assertIn('data:image/avif;base64,', css)
+                self.assertEqual("--omarchy-header-wallpaper:" in css, style != "full-alt")
+                self.assertEqual("--omarchy-wallpaper:" in css, style != "minimal")
+                self.assertEqual("100% 100%,cover" in css, style == "max")
+                self.assertEqual("backdrop-filter:blur(" in css, style == "full-alt")
+                self.assertIn('--omarchy-font:"Fixture Mono";', css)
+                self.assertIn('--omarchy-radius:12px;', css)
+                self.assertIn('--omarchy-border-width:3px;', css)
+                if style != "minimal":
+                    data = base64.b64decode(re.search(r'--omarchy-wallpaper:url\("data:image/avif;base64,([^"]+)', css)[1])
+                    size = subprocess.run([MAGICK, "identify", "-format", "%w %h", "-"], input=data,
+                                          env=self.env, capture_output=True, check=True).stdout
+                    self.assertEqual(size, b"160 90")
+                    self.assertEqual(status["picture"], {"format": "avif", "bytes": len(data), "width": 160, "height": 90})
+                self.assertEqual(json.loads((self.theme / "t3code.json").read_text()), self.palette)
+
+    def test_settings_persist_and_old_styles_migrate(self):
+        self.config.write_text('# keep me\nstyle = "full"\nmin_tint = 0.9\n')
+        self.publish("--style", "max", "--tint", "0.35")
+        self.publish()
+        self.assertEqual(self.output("max")[1]["backdropTint"], 0.35)
+        self.assertEqual(tomllib.loads(self.config.read_text()), {"style": "max", "min_tint": 0.9, "backdrop_tint": 0.35})
+        self.assertIn("# keep me", self.config.read_text())
+        self.publish("--tint", "auto")
+        self.assertEqual(tomllib.loads(self.config.read_text())["backdrop_tint"], "auto")
+        self.one_wallpaper()
         for old, new in (("too-much", "max"), ("backdrop", "full-alt")):
-            self.config.write_text(f'style = "{old}"\nmin_tint = 0.9\n')
-            self.assertEqual(publisher.load_settings()["style"], new)
-            self.assertEqual(self.config.read_text(), f'style = "{new}"\nmin_tint = 0.9\n')
+            with self.subTest(old=old):
+                self.config.write_text(f'style = "{old}"\n')
+                self.publish()
+                self.output(new)
+                self.assertEqual(tomllib.loads(self.config.read_text())["style"], new)
 
-    def test_bad_values_fall_back(self):
-        self.config.write_text('style = "loud"\nmin_blur = "lots"\nmin_tint = 3\n')
-        with mock.patch.object(publisher, "warn"):
-            settings = publisher.load_settings()
-        self.assertEqual(settings["style"], publisher.DEFAULT_STYLE)
-        self.assertEqual(settings["min_blur"], publisher.MIN_BLUR)
-        self.assertEqual(settings["min_tint"], 1.0)
+    def test_inside_wallpaper_avoids_desktop_header_and_last_then_falls_back(self):
+        shown = []
+        for _ in range(3):
+            self.publish()
+            path = Path(self.output("full")[1]["wallpaper"])
+            self.assertIn(path, self.walls[2:])
+            if shown:
+                self.assertNotEqual(path, shown[-1])
+            shown.append(path)
+        for remaining, expected in ((3, self.walls[2]), (2, self.walls[0]), (1, self.walls[0])):
+            self.walls[remaining].unlink()
+            self.publish()
+            self.assertEqual(Path(self.output("full")[1]["wallpaper"]), expected)
 
+    def test_bad_config_falls_back_and_unresolved_palette_preserves_theme(self):
+        for config in ('style = [broken', 'style = []', 'style = {bad = 1}',
+                       'style = "loud"\nmin_blur = "lots"\nmin_tint = 3\nbackdrop_tint = false\n'):
+            with self.subTest(config=config):
+                self.config.write_text(config)
+                self.publish()
+                self.output("full")
+        previous = self.target.read_bytes()
+        (self.theme / "t3code.json").write_text('{"name":"{{ accent }}"}')
+        self.publish()
+        self.assertEqual(self.target.read_bytes(), previous)
+        status = json.loads(self.status.read_text())
+        self.assertFalse(status["published"])
+        self.assertIn("unresolved", status["warning"])
 
-class InsideWallpaper(unittest.TestCase):
-    """The wallpaper inside T3 Code avoids the desktop's, the header's and the one shown, when it can."""
+    def test_css_over_the_limit_publishes_the_palette_without_it(self):
+        self.tool("fc-match", "printf '%s' " + "F" * 60000)
+        self.publish()
+        theme = json.loads(self.target.read_text())
+        self.assertEqual(theme["name"], "Thememaxed")
+        self.assertNotIn("css", theme)
+        self.assertIn("over T3 Code's 50000 limit", json.loads(self.status.read_text())["warning"])
 
-    def pick(self, names, desktop, shown=None):
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        paths = [Path(folder.name) / name for name in names]
-        for path in paths:
-            path.touch()
-        shown = paths[shown].resolve() if shown is not None else None
-        with mock.patch.object(publisher, "theme_wallpapers", return_value=paths), \
-                mock.patch.object(publisher, "desktop_wallpaper", return_value=paths[desktop]), \
-                mock.patch.object(publisher, "shown_wallpaper", return_value=shown):
-            return {publisher.random_wallpaper().name for _ in range(40)}
+    @unittest.skipUnless(AVIFENC, "needs avifenc")
+    def test_full_alt_cache_warm_and_image_changes(self):
+        self.one_wallpaper()
+        self.publish("--style", "full-alt", "--tint", "0.3")
+        css, status = self.output("full-alt")
+        self.assertEqual(status["picture"]["format"], "avif")
+        self.assertEqual(status["tint"], 0.3)
+        self.assertIn("avifenc", self.log.read_text())
+        self.assertNotIn("-blur", self.log.read_text())
+        self.assertNotIn("-function", self.log.read_text())
+        self.log.write_text("")
+        self.publish()
+        self.assertEqual(self.output("full-alt")[0], css)
+        self.assertNotIn("avifenc", self.log.read_text())
+        self.walls[1].write_bytes(self.walls[0].read_bytes())
+        self.publish()
+        previous = self.target.read_bytes(), self.status.read_bytes()
+        self.publish("--warm")
+        self.assertIn("nice\n-n 19", self.log.read_text())
+        self.assertEqual((self.target.read_bytes(), self.status.read_bytes()), previous)
+        self.assertEqual(len(json.loads(self.cache.read_text())), 2)
+        self.log.write_text("")
+        self.publish()
+        self.output("full-alt")
+        self.assertNotIn("avifenc", self.log.read_text())
+        self.walls[0].write_bytes(self.walls[0].read_bytes() + b"\n")
+        self.publish()
+        self.output("full-alt")
+        self.assertIn("avifenc", self.log.read_text())
 
-    def test_skips_the_desktop_the_header_and_the_one_shown(self):
-        self.assertEqual(self.pick(["0.jpg", "1.jpg", "2.jpg", "3.jpg"], desktop=1, shown=2), {"3.jpg"})
+    @unittest.skipUnless(AVIFENC, "needs avifenc")
+    def test_sharp_cache_adapts_to_a_smaller_css_budget(self):
+        self.one_wallpaper()
+        subprocess.run([MAGICK, "-size", "320x180", "xc:", "-seed", "7", "+noise", "Random", str(self.walls[0])],
+                       env=self.env, check=True, capture_output=True)
+        self.publish("--style", "full-alt")
+        css, first = self.output("full-alt")
+        self.assertGreater(len(css), 40000)
+        self.tool("fc-match", "printf '%s' '" + "F" * 3000 + "'")
+        self.publish()
+        _, smaller = self.output("full-alt")
+        self.assertLess(smaller["quality"], first["quality"])
+        self.assertLess(smaller["picture"]["bytes"], first["picture"]["bytes"])
 
-    def test_falls_back_to_the_one_shown_then_the_header_then_the_desktop(self):
-        self.assertEqual(self.pick(["0.jpg", "1.jpg", "2.jpg"], desktop=1, shown=2), {"2.jpg"})
-        self.assertEqual(self.pick(["0.jpg", "1.jpg"], desktop=1), {"0.jpg"})
-        self.assertEqual(self.pick(["0.jpg"], desktop=0), {"0.jpg"})
-
-
-class Budget(unittest.TestCase):
-    """build_css gives the pictures what the CSS limit leaves."""
-
-    def setUp(self):
-        self.folder = tempfile.TemporaryDirectory()
-        self.addCleanup(self.folder.cleanup)
-        tokens = set(publisher.re.findall(r"\{\{\s*(\w+)\s*\}\}", TEMPLATE))
-        for patcher in (
-            mock.patch.object(publisher, "THEME_DIR", Path(self.folder.name)),
-            mock.patch.object(publisher, "theme_values", return_value={token: "#123456" for token in tokens}),
-            mock.patch.object(publisher, "command_output", return_value=""),
-            mock.patch.object(publisher, "desktop_wallpaper", return_value=Path("/w.jpg")),
-            mock.patch.object(publisher, "first_wallpaper", return_value=Path("/w.jpg")),
-            mock.patch.object(publisher, "random_wallpaper", return_value=Path("/w.jpg")),
-            mock.patch.object(publisher, "picture_luminance", return_value=0.2),
-            mock.patch.object(publisher, "REPORT", {}),
-            mock.patch.object(publisher, "warn"),
-        ):
-            patcher.start()
-            self.addCleanup(patcher.stop)
-
-    def budgets(self, style, limit, picture="none"):
-        calls = []
-
-        def sharp(source, budget):
-            calls.append(budget)
-            return picture, "auto"
-
-        def blurred(source, budget, steps, min_blur=None):
-            calls.append(budget)
-            return picture
-
-        settings = {"style": style, "min_blur": 20, "min_tint": 0.75, "backdrop_tint": "auto"}
-        with mock.patch.object(publisher, "CSS_LIMIT", limit), \
-                mock.patch.object(publisher, "sharp_wallpaper_css", side_effect=sharp), \
-                mock.patch.object(publisher, "wallpaper_css", side_effect=blurred):
-            css = publisher.build_css(settings)
-        return calls, css
-
-    def test_the_backdrop_gets_what_the_limit_leaves(self):
-        (small,), _ = self.budgets("full-alt", 20000)
-        (large,), _ = self.budgets("full-alt", 50000)
-        self.assertEqual(large - small, 30000)
-        self.assertLess(small, 20000)
-
-    def test_full_shares_the_room_between_header_and_conversation(self):
-        calls, _ = self.budgets("full", 50000)
-        header, background = calls[:2]
-        self.assertGreater(header, 20000)
-        self.assertLessEqual(header + background, 50000)
-
-    def test_css_over_the_limit_is_dropped(self):
-        _, css = self.budgets("full-alt", 20000, picture="x" * 30000)
-        self.assertIsNone(css)
-        _, css = self.budgets("full-alt", 50000, picture="x" * 30000)
-        self.assertIsNotNone(css)
+    @unittest.skipUnless(AVIFENC, "needs avifenc")
+    def test_pixel_art_keeps_native_pixels_and_fallback_works_without_avifenc(self):
+        self.one_wallpaper()
+        subprocess.run([MAGICK, "-size", "16x9", "pattern:checkerboard", "-sample", "160x90!", str(self.walls[0])],
+                       env=self.env, check=True, capture_output=True)
+        self.publish("--style", "full-alt")
+        _, status = self.output("full-alt")
+        self.assertEqual(status["rendering"], "pixelated")
+        self.assertEqual(status["picture"]["format"], "webp")
+        self.assertEqual((status["picture"]["width"], status["picture"]["height"]), (16, 9))
+        (self.bin / "avifenc").unlink()
+        self.publish()
+        _, status = self.output("full-alt")
+        self.assertEqual(status["picture"]["format"], "avif")
+        self.assertEqual(status["rendering"], "auto")
 
 
 class SharpSearch(unittest.TestCase):
-    """The sharp picture's search, on made-up sizes that grow with width and level."""
+    def test_search_matches_exhaustive_choice_and_reuses_measured_levels(self):
+        loader = importlib.machinery.SourceFileLoader("publisher", str(PUBLISHER))
+        publisher = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(publisher)
+        widths = [1920, 1600, 1280, 960]
 
-    widths = [1920, 1600, 1280, 960]
+        def size(width, quality):
+            return int(900 * (width / 960) ** 1.7 * math.exp(0.07 * publisher.avif_level(quality)))
 
-    @staticmethod
-    def size(width, quality):
-        return int(900 * (width / 960) ** 1.7 * publisher.math.exp(0.07 * publisher.avif_level(quality)))
-
-    def expected(self, room, good=20, top=90):
-        for width in self.widths:
-            if self.size(width, good) <= room:
-                return width, publisher.avif_level(max(q for q in range(good, top + 1) if self.size(width, q) <= room))
-        fits = [q for q in range(good) if self.size(self.widths[-1], q) <= room]
-        return (self.widths[-1], publisher.avif_level(max(fits))) if fits else None
-
-    def search(self, room, sizes=None):
-        sizes = {} if sizes is None else sizes
-        measured = []
-
-        def measure(pairs):
-            measured.extend(pairs)
-            return [self.size(*pair) for pair in pairs]
-
-        def sketch(width):
-            return {q: int(self.size(width, q) * 1.2) for q in publisher.SHARP_SKETCH_QUALITIES}
-
-        chosen = publisher.sharp_search(sizes, room, self.widths, 20, 90, measure, sketch)
-        return chosen, measured
-
-    def test_finds_what_trying_every_quality_would(self):
         for room in range(1500, 60000, 1700):
-            chosen, measured = self.search(room)
-            level = chosen and (chosen[0], publisher.avif_level(chosen[1]))
-            self.assertEqual(level, self.expected(room), room)
-            self.assertLess(len(measured), 12, room)
+            with self.subTest(room=room):
+                measured, sizes = [], {}
 
-    def test_qualities_of_one_level_are_encoded_once(self):
-        self.assertEqual(publisher.avif_level(25), publisher.avif_level(26))
-        self.assertNotEqual(publisher.avif_level(24), publisher.avif_level(25))
-        _, measured = self.search(9000)
-        levels = [(width, publisher.avif_level(quality)) for width, quality in measured]
-        self.assertEqual(len(levels), len(set(levels)))
+                def measure(pairs):
+                    measured.extend(pairs)
+                    return [size(*pair) for pair in pairs]
 
-    def test_known_sizes_need_no_encoding(self):
-        sizes = {}
-        first, _ = self.search(9000, sizes)
-        again, measured = self.search(9000, sizes)
-        self.assertEqual(again, first)
-        self.assertEqual(measured, [])
+                def sketch(width):
+                    return {q: int(size(width, q) * 1.2) for q in publisher.SHARP_SKETCH_QUALITIES}
 
-
-@unittest.skipUnless(publisher.shutil.which("magick") and publisher.shutil.which("avifenc"), "needs ImageMagick and avifenc")
-class SharpPicture(unittest.TestCase):
-    def setUp(self):
-        self.folder = Path(tempfile.mkdtemp())
-        self.addCleanup(publisher.shutil.rmtree, self.folder)
-        for patcher in (
-            mock.patch.object(publisher, "SHARP_CACHE", self.folder / "sharp-cache.json"),
-            mock.patch.object(publisher, "REPORT", {}),
-        ):
-            patcher.start()
-            self.addCleanup(patcher.stop)
-
-    def encodes(self, source, budget):
-        calls = []
-        run = publisher.subprocess.run
-
-        def counted(command, **kwargs):
-            if command[0] == "avifenc":
-                calls.append(command)
-            return run(command, **kwargs)
-
-        with mock.patch.object(publisher.subprocess, "run", side_effect=counted):
-            image, rendering = publisher.sharp_wallpaper_css(source, budget)
-        return image, rendering, len(calls)
-
-    def test_a_wallpaper_published_again_is_not_encoded_again(self):
-        photo = self.folder / "photo.png"
-        publisher.subprocess.run(["magick", "-size", "480x270", "plasma:", "-blur", "0x1", photo], check=True)
-        image, rendering, first = self.encodes(photo, 6000)
-        self.assertTrue(image.startswith('url("data:image/avif;base64,'))
-        self.assertLessEqual(len(image), 6000)
-        self.assertEqual(rendering, "auto")
-        self.assertGreater(first, 0)
-        again, _, second = self.encodes(photo, 6000)
-        self.assertEqual(again, image)
-        self.assertEqual(second, 0)
-
-    def test_pixel_art_is_sent_at_its_own_size(self):
-        art = self.folder / "art.png"
-        publisher.subprocess.run(["magick", "-size", "48x27", "xc:", "+noise", "Random", "-sample", "480x270!", art], check=True)
-        image, rendering, _ = self.encodes(art, 12000)
-        self.assertEqual(rendering, "pixelated")
-        self.assertTrue(image.startswith('url("data:image/webp;base64,'))
-        data = publisher.base64.b64decode(image.split(",", 1)[1].rstrip('")'))
-        size = publisher.subprocess.run(["magick", "identify", "-format", "%w %h", "-"], input=data, capture_output=True).stdout
-        self.assertEqual(size, b"48 27")
-        # Too little room for the lossless picture: the best AVIF that fits, still pixelated.
-        image, rendering, _ = self.encodes(art, 2500)
-        self.assertEqual(rendering, "pixelated")
-        self.assertTrue(image.startswith('url("data:image/avif;base64,'))
-        self.assertLessEqual(len(image), 2500)
-
-
-class Theme(unittest.TestCase):
-    def setUp(self):
-        self.folder = tempfile.TemporaryDirectory()
-        self.addCleanup(self.folder.cleanup)
-        self.theme_dir = Path(self.folder.name)
-        patcher = mock.patch.object(publisher, "THEME_DIR", self.theme_dir)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def test_builds_on_omarchys_palette_under_its_own_name(self):
-        (self.theme_dir / "t3code.json").write_text(json.dumps({"name": "Omarchy", "canvas": "#000000"}))
-        with mock.patch.object(publisher, "build_css", return_value=":root{}"):
-            theme = publisher.build_theme({"style": "full"})
-        self.assertEqual(theme["name"], "Thememaxed")
-        self.assertEqual(theme["canvas"], "#000000")
-        self.assertEqual(theme["css"], ":root{}")
-
-    def test_leaves_the_last_theme_when_the_palette_is_unresolved(self):
-        (self.theme_dir / "t3code.json").write_text('{"name": "{{ accent }}"}')
-        with mock.patch.object(publisher, "warn"):
-            self.assertIsNone(publisher.build_theme({"style": "full"}))
+                chosen = publisher.sharp_search(sizes, room, widths, 20, 90, measure, sketch)
+                width = next((w for w in widths if size(w, 20) <= room), widths[-1])
+                qualities = [q for q in range(91) if size(width, q) <= room]
+                expected = (width, publisher.avif_level(max(qualities))) if qualities else None
+                self.assertEqual(chosen and (chosen[0], publisher.avif_level(chosen[1])), expected)
+                self.assertLess(len(measured), 12)
+                levels = [(w, publisher.avif_level(q)) for w, q in measured]
+                self.assertEqual(len(levels), len(set(levels)))
+                measured.clear()
+                self.assertEqual(publisher.sharp_search(sizes, room, widths, 20, 90, measure, sketch), chosen)
+                self.assertEqual(measured, [])
 
 
 if __name__ == "__main__":
