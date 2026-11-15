@@ -29,9 +29,8 @@ plugin runs in the Omarchy shell and republishes the theme whenever the
 desktop changes.
 
 The plugin also puts a palette icon (󰏘) in the bar. Click it to pick the
-style and the backdrop's tint, see the theme, wallpaper and CSS size that were
-last published, publish again or open the config. Middle-click publishes
-again. To move or remove the icon, use the bar's widget settings like any
+style and the backdrop's tint, publish again or open the config. Middle-click
+publishes again. To move or remove the icon, use the bar's widget settings like any
 other widget. Updated from a version without the icon? Run
 `omarchy plugin enable io.github.jagrat7.omarchy-t3code-plus right` and
 restart the shell with `omarchy-restart-shell`.
