@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Omarchy+ for T3 Code without the plugin: Omarchy hooks republish the
+# Install T3 Code Thememaxed without the plugin: Omarchy hooks republish the
 # theme on theme and font changes. Use either this or the plugin, not both.
 #
 #   bash scripts/install.sh [minimal|full|too-much|backdrop]
@@ -54,7 +54,7 @@ esac
 
 for id in "$PLUGIN_ID" io.github.jagrat7.omarchy-t3code-theme; do
   if [[ -e $CONFIG_HOME/omarchy/plugins/$id ]]; then
-    die "the Omarchy+ for T3 Code plugin is installed and already does this. Remove it first (omarchy plugin remove $id) to use the hooks instead."
+    die "the T3 Code Thememaxed plugin is installed and already does this. Remove it first (omarchy plugin remove $id) to use the hooks instead."
   fi
 done
 command -v omarchy-theme-set-t3code >/dev/null ||
@@ -141,10 +141,10 @@ style=$(sed -n 's/^style *= *"\(.*\)".*/\1/p' "$config" | head -1)
 say ""
 say "Installed, style: ${style:-full}."
 if [[ -d $T3CODE_STATE ]]; then
-  say "In T3 Code, choose Settings > Appearance > Omarchy+."
+  say "In T3 Code, choose Settings > Appearance > Thememaxed."
 else
   say "T3 Code has not been run yet. Open it once, run t3code-omarchy-plus,"
-  say "then choose Settings > Appearance > Omarchy+."
+  say "then choose Settings > Appearance > Thememaxed."
 fi
 say ""
 say "  Switch style:          t3code-omarchy-plus --style minimal|full|too-much|backdrop"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Remove the standalone install of Omarchy+ for T3 Code (scripts/install.sh).
+# Remove the standalone install of T3 Code Thememaxed (scripts/install.sh).
 # The plugin is removed with: omarchy plugin remove io.github.jagrat7.omarchy-t3code-plus
 # Files are moved aside, not deleted. Omarchy's own "Omarchy" theme for T3 Code
 # is untouched either way.
@@ -27,7 +27,7 @@ done
 
 if [[ -d $backup ]]; then
   echo "Removed. The files were moved to ${backup/#$HOME/\~}"
-  echo "If T3 Code was set to Omarchy+, pick Settings > Appearance > Omarchy."
+  echo "If T3 Code was set to Thememaxed, pick Settings > Appearance > Omarchy."
 else
   echo "Nothing to remove."
 fi

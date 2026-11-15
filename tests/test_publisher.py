@@ -367,7 +367,7 @@ class Theme(unittest.TestCase):
         (self.theme_dir / "t3code.json").write_text(json.dumps({"name": "Omarchy", "canvas": "#000000"}))
         with mock.patch.object(publisher, "build_css", return_value=":root{}"):
             theme = publisher.build_theme({"style": "full"})
-        self.assertEqual(theme["name"], "Omarchy+")
+        self.assertEqual(theme["name"], "Thememaxed")
         self.assertEqual(theme["canvas"], "#000000")
         self.assertEqual(theme["css"], ":root{}")
 

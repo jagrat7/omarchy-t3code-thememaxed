@@ -12,9 +12,9 @@ BarWidget {
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
 
   readonly property string tooltip: {
-    if (!service) return "Omarchy+ for T3 Code"
-    if (service.publishing) return "Omarchy+ for T3 Code — publishing"
-    return "Omarchy+ for T3 Code — " + service.style
+    if (!service) return "T3 Code Thememaxed"
+    if (service.publishing) return "T3 Code Thememaxed — publishing"
+    return "T3 Code Thememaxed — " + service.style
   }
 
   function injectPanel() {

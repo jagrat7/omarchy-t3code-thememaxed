@@ -1,4 +1,4 @@
-<h1 align="center">Omarchy+ for T3 Code</h1>
+<h1 align="center">T3 Code Thememaxed</h1>
 
 <p align="center">
   <a href="https://github.com/jagrat7/omarchy-t3code-thememaxed/commits/main"><img src="https://img.shields.io/github/manifest-json/v/jagrat7/omarchy-t3code-thememaxed?style=flat-square&label=version&labelColor=1c1d25&color=34c8cb" alt="Version"></a>
@@ -12,10 +12,10 @@ corners and borders, the shell's menus and popups, and the theme's wallpaper
 behind the app. It follows every theme switch, font change and new wallpaper
 on its own.
 
-![T3 Code with Omarchy+ in the backdrop style, on the Retro 82 theme](docs/screenshots/backdrop.webp)
+![T3 Code with Thememaxed in the backdrop style, on the Retro 82 theme](docs/screenshots/backdrop.webp)
 
 Omarchy already publishes a colours-only T3 Code theme called **Omarchy**.
-This plugin leaves that one alone and publishes a second theme, **Omarchy+**,
+This plugin leaves that one alone and publishes a second theme, **Thememaxed**,
 built on the same palette.
 
 ## Install
@@ -24,7 +24,7 @@ built on the same palette.
 omarchy plugin add https://github.com/jagrat7/omarchy-t3code-thememaxed.git --enable
 ```
 
-Then in T3 Code choose **Settings > Appearance > Omarchy+**. That's all: the
+Then in T3 Code choose **Settings > Appearance > Thememaxed**. That's all: the
 plugin runs in the Omarchy shell and republishes the theme whenever the
 desktop changes.
 

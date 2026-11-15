@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "io.github.jagrat7.omarchy-t3code-plus",
-  "name": "Omarchy+ for T3 Code",
+  "name": "T3 Code Thememaxed",
   "version": "1.2.0",
   "author": "jagrat7",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Omarchy+ for T3 Code",
+    "displayName": "T3 Code Thememaxed",
     "description": "Pick the T3 Code wallpaper style and tint, and see what was last published.",
     "category": "Appearance",
     "aliases": [

@@ -88,7 +88,7 @@ Panel {
 
         PanelHero {
           width: parent.width
-          title: "Omarchy+ for T3 Code"
+          title: "T3 Code Thememaxed"
           meta: root.metaText()
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -195,7 +195,7 @@ Panel {
         }
 
         Note {
-          text: "In T3 Code, choose Settings › Appearance › Omarchy+."
+          text: "In T3 Code, choose Settings › Appearance › Thememaxed."
           font.pixelSize: Style.font.caption
         }
       }

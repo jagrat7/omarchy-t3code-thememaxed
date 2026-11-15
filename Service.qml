@@ -3,7 +3,7 @@ import Qt.labs.folderlistmodel
 import Quickshell
 import Quickshell.Io
 
-// Keeps T3 Code's "Omarchy+" theme in step with the desktop. The publisher in
+// Keeps T3 Code's "Thememaxed" theme in step with the desktop. The publisher in
 // bin/ runs once when the shell starts the plugin, then after a theme switch,
 // a font change, a new wallpaper or a saved edit to the plugin's config. A
 // service, so exactly one of these runs per shell. The bar widget reads its

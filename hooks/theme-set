@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Republishes T3 Code's Omarchy+ theme after a theme change. Installed by
+# Republishes T3 Code's Thememaxed theme after a theme change. Installed by
 # scripts/install.sh; the plugin does this itself and needs no hooks.
 # https://github.com/jagrat7/omarchy-t3code-thememaxed
 command="$HOME/.local/bin/t3code-omarchy-plus"

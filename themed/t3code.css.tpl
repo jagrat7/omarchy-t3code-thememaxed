@@ -4,7 +4,7 @@
    values, the same ones Omarchy's own templates get (omarchy-theme-color),
    supplies the --omarchy-* values (system font, Hyprland rounding and
    borders, the menu and popup styling from shell.toml, the wallpapers) and
-   publishes the result to T3 Code as the "Omarchy+" theme.
+   publishes the result to T3 Code as the "Thememaxed" theme.
 
    https://github.com/jagrat7/omarchy-t3code-thememaxed */
 

@@ -1,11 +1,11 @@
 #!/usr/bin/python3
-"""Publish the "Omarchy+" theme to T3 Code: Omarchy's palette plus the look.
+"""Publish the "Thememaxed" theme to T3 Code: Omarchy's palette plus the look.
 
 Omarchy already renders T3 Code's palette into the current theme (t3code.json)
 and publishes it as T3 Code's "Omarchy" theme. This takes that palette, adds
 CSS rendered from themed/t3code.css.tpl with the theme's colours, the system
 font, Hyprland's rounding and borders, the shell's popup and menu styling and
-the wallpapers, and publishes the result as a second theme, "Omarchy+".
+the wallpapers, and publishes the result as a second theme, "Thememaxed".
 Omarchy's own theme is left as it is.
 
 Run by the plugin's service (or the hooks of the standalone install) whenever
@@ -47,7 +47,7 @@ T3CODE_HOME = Path(os.environ.get("T3CODE_HOME") or HOME / ".t3")
 STATE_DIR = T3CODE_HOME / "userdata"
 # A theme of its own, beside Omarchy's "omarchy", which Omarchy keeps writing.
 TARGET = STATE_DIR / "themes/omarchy-plus.json"
-THEME_NAME = "Omarchy+"
+THEME_NAME = "Thememaxed"
 # What the last run published, for the bar widget.
 STATUS = STATE_HOME / "omarchy-t3code-plus/status.json"
 LOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "t3code-omarchy-plus.lock"
@@ -141,7 +141,7 @@ HYPRLAND_DEFAULTS = {
 }
 
 CONFIG_TEMPLATE = """\
-# Omarchy+ for T3 Code: https://github.com/jagrat7/omarchy-t3code-thememaxed
+# T3 Code Thememaxed: https://github.com/jagrat7/omarchy-t3code-thememaxed
 # The plugin applies changes to this file as soon as it is saved.
 
 # minimal:  the theme's first wallpaper behind the sidebar's header
@@ -1091,7 +1091,7 @@ def publish(settings):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Publish the "Omarchy+" theme to T3 Code.')
+    parser = argparse.ArgumentParser(description='Publish the "Thememaxed" theme to T3 Code.')
     parser.add_argument(
         "--style",
         choices=list(STYLES),
