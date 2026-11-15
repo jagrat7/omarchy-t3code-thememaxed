@@ -88,21 +88,12 @@
 }
 
 /* Type: one font everywhere, the Omarchy system font. These three variables
-   feed all of T3 Code's interface, prose, composer and code text. */
+   feed all of T3 Code's interface, prose, composer and code text: every
+   font-family in its stylesheet reads one of them. */
 :root {
   --font-sans: var(--omarchy-font), ui-monospace, monospace !important;
   --font-mono: var(--omarchy-font), ui-monospace, monospace !important;
   --font-composer: var(--omarchy-font), ui-monospace, monospace !important;
-}
-
-body,
-button,
-input,
-textarea,
-select,
-.chat-markdown,
-.composer-tiptap {
-  font-family: var(--font-sans) !important;
 }
 
 /* Shape: Hyprland's window rounding. */
@@ -130,7 +121,7 @@ select,
 [class*="rounded-xl"],
 [class*="rounded-2xl"],
 [class*="rounded-3xl"],
-[class*="rounded-["]:not([class*="rounded-[50"], [class*="rounded-[99"]),
+[class*="rounded-["],
 [class*="before:rounded-"]:not([class*="before:rounded-full"])::before,
 [class*="after:rounded-"]:not([class*="after:rounded-full"])::after {
   border-radius: 0 !important;
@@ -180,7 +171,7 @@ select,
   background-color: {{ background }} !important;
 }
 
-/* Wallpaper. The sync hook supplies two pictures, blurred and tinted with
+/* Wallpaper. The publisher supplies two pictures, blurred and tinted with
    floors that keep text readable: --omarchy-header-wallpaper is the
    theme's first wallpaper, --omarchy-wallpaper a random one of the theme's.
    The chosen style keeps some of the @part blocks below: minimal keeps the

@@ -34,7 +34,9 @@ Item {
   property var status: ({})
   property string style: "full"
   property string tint: "auto"
-  property string lastError: ""
+  // A watch only holds on a file that exists, and the config is written by
+  // the first run. While it is missing, the watcher is rebuilt after each run.
+  property bool configMissing: false
 
   // A theme switch touches several of the watched paths within a moment, so
   // changes are gathered into one run.
@@ -108,10 +110,7 @@ Item {
     id: run
     command: [root.publisher]
     stderr: StdioCollector {
-      onStreamFinished: {
-        root.lastError = text.trim()
-        if (text.trim() !== "") console.warn("[t3code-omarchy-plus] " + text.trim())
-      }
+      onStreamFinished: if (text.trim() !== "") console.warn("[t3code-omarchy-plus] " + text.trim())
     }
     onExited: {
       root.savingSetting = false
@@ -129,31 +128,20 @@ Item {
     }
   }
 
+  // A file whose every change means publishing again.
+  component Trigger: FileView {
+    watchChanges: true
+    printErrors: false
+    onFileChanged: {
+      reload()
+      root.schedule()
+    }
+  }
+
   // Written by omarchy theme set once the new theme is in place.
-  FileView {
-    path: root.currentDir + "/theme.generation"
-    watchChanges: true
-    printErrors: false
-    onFileChanged: {
-      reload()
-      root.schedule()
-    }
-  }
-
+  Trigger { path: root.currentDir + "/theme.generation" }
   // Rewritten by omarchy font set.
-  FileView {
-    path: root.configHome + "/fontconfig/fonts.conf"
-    watchChanges: true
-    printErrors: false
-    onFileChanged: {
-      reload()
-      root.schedule()
-    }
-  }
-
-  // A watch only holds on a file that exists, and the config is written by
-  // the first run. While it is missing, the watcher is rebuilt after each run.
-  property bool configMissing: false
+  Trigger { path: root.configHome + "/fontconfig/fonts.conf" }
 
   Loader {
     id: configWatch

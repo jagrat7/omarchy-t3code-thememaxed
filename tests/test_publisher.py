@@ -78,7 +78,7 @@ class Blocks(unittest.TestCase):
     def test_settings_are_saved_in_place(self):
         with tempfile.TemporaryDirectory() as folder, \
                 mock.patch.object(publisher, "CONFIG", Path(folder) / "config.toml"):
-            publisher.save_style("backdrop")
+            publisher.save_setting("style", '"backdrop"')
             publisher.save_setting("backdrop_tint", "0.3")
             publisher.save_setting("backdrop_tint", '"auto"')
             lines = [line for line in publisher.CONFIG.read_text().splitlines() if line and not line.startswith("#")]
@@ -144,6 +144,16 @@ class Colors(unittest.TestCase):
         self.assertEqual(publisher.css_color("#ed9998", 0.5), "rgb(237 153 152 / 0.5)")
         self.assertIsNone(publisher.css_color("red"))
 
+    def test_hyprland_options_come_from_one_batch(self):
+        answers = '{"option": "decoration:rounding", "int": 12, "set": true }\n\n\nno such option\n\n\n' \
+            '{"option": "decoration:blur:brightness", "float": 0.75, "set": true }'
+        with mock.patch.object(publisher, "command_output", return_value=answers) as hyprctl:
+            options = publisher.hyprland_options.__wrapped__()
+        self.assertEqual(hyprctl.call_count, 1)
+        self.assertEqual(options["decoration:rounding"], 12)
+        self.assertEqual(options["decoration:blur:brightness"], 0.75)
+        self.assertEqual(options["general:border_size"], publisher.HYPRLAND_DEFAULTS["general:border_size"])
+
     def test_gradient_angle_turns_to_css(self):
         colors, angle = publisher.parse_border("rgb(ed9998) rgb(fbe4c5) 45deg")
         self.assertEqual(publisher.css_gradient(colors, angle), "linear-gradient(135deg, #ed9998, #fbe4c5)")
@@ -159,14 +169,14 @@ class Settings(unittest.TestCase):
         self.addCleanup(self.folder.cleanup)
 
     def test_first_save_writes_the_commented_defaults(self):
-        publisher.save_style("minimal")
+        publisher.save_setting("style", '"minimal"')
         text = self.config.read_text()
         self.assertIn('style = "minimal"', text)
         self.assertIn("# min_blur", text)
 
     def test_saving_keeps_the_rest_of_the_file(self):
         self.config.write_text('style = "full"\nmin_tint = 0.9\n')
-        publisher.save_style("too-much")
+        publisher.save_setting("style", '"too-much"')
         self.assertEqual(self.config.read_text(), 'style = "too-much"\nmin_tint = 0.9\n')
         settings = publisher.load_settings()
         self.assertEqual(settings["style"], "too-much")

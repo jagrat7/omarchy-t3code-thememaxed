@@ -1,4 +1,3 @@
-pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import qs.Ui
@@ -22,6 +21,7 @@ Panel {
   readonly property var status: service ? service.status : ({})
   readonly property string style: service ? service.style : ""
   readonly property bool autoTint: !service || service.tint === "auto"
+  readonly property bool backdrop: style === "backdrop"
 
   readonly property var styles: [
     { value: "minimal", label: "Minimal", about: "The theme's first wallpaper behind the sidebar's header." },
@@ -102,11 +102,7 @@ Panel {
           }
         }
 
-        PanelSectionHeader {
-          text: "STYLE"
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-        }
+        SectionHeader { text: "STYLE" }
 
         Row {
           id: styleRow
@@ -117,56 +113,33 @@ Panel {
           Repeater {
             model: root.styles
 
-            Button {
+            PanelButton {
               required property var modelData
               width: styleRow.cellWidth
               text: modelData.label
-              fontSize: Style.font.bodySmall
-              bordered: true
               focusable: true
-              foreground: root.foreground
-              fontFamily: root.fontFamily
               active: root.style === modelData.value
-              enabled: !!root.service
               Keys.onEscapePressed: root.close()
               onClicked: root.service.setStyle(modelData.value)
             }
           }
         }
 
-        Text {
-          width: parent.width
-          text: root.aboutStyle()
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          wrapMode: Text.WordWrap
-        }
+        Note { text: root.aboutStyle() }
 
-        PanelSeparator { width: parent.width; foreground: root.foreground; visible: root.style === "backdrop" }
-
-        PanelSectionHeader {
-          visible: root.style === "backdrop"
-          text: "CHAT COLUMN TINT"
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-        }
+        PanelSeparator { width: parent.width; foreground: root.foreground; visible: root.backdrop }
+        SectionHeader { text: "CHAT COLUMN TINT"; visible: root.backdrop }
 
         Row {
           id: tintRow
-          visible: root.style === "backdrop"
+          visible: root.backdrop
           width: parent.width
           spacing: Style.space(10)
 
-          Button {
+          PanelButton {
             id: autoButton
             text: "Auto"
-            fontSize: Style.font.bodySmall
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
             active: root.autoTint
-            enabled: !!root.service
             onClicked: root.service.setTint("auto")
           }
 
@@ -185,15 +158,11 @@ Panel {
 
         PanelSeparator { width: parent.width; foreground: root.foreground }
 
-        PanelSectionHeader {
-          text: "LAST PUBLISHED"
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-        }
+        SectionHeader { text: "LAST PUBLISHED" }
 
         InfoRow { label: "Theme"; value: root.status.theme || "—" }
         InfoRow { label: "Wallpaper"; value: root.pictureText() }
-        InfoRow { label: "Tint"; value: root.tintText(); visible: root.style === "backdrop" }
+        InfoRow { label: "Tint"; value: root.tintText(); visible: root.backdrop }
         InfoRow {
           label: "CSS"
           value: root.status.chars
@@ -207,26 +176,17 @@ Panel {
           spacing: Style.space(6)
           readonly property real cellWidth: (width - spacing) / 2
 
-          Button {
+          PanelButton {
             width: actionRow.cellWidth
             text: root.service && root.service.publishing ? "Publishing…" : "Publish again"
             tooltipText: "Rebuild the theme now. Full and too-much also deal a new wallpaper."
-            fontSize: Style.font.bodySmall
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
             enabled: !!root.service && !root.service.publishing
             onClicked: root.service.publish([])
           }
 
-          Button {
+          PanelButton {
             width: actionRow.cellWidth
             text: "Edit config"
-            fontSize: Style.font.bodySmall
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            enabled: !!root.service
             onClicked: {
               root.service.editConfig()
               root.close()
@@ -234,16 +194,34 @@ Panel {
           }
         }
 
-        Text {
-          width: parent.width
+        Note {
           text: "In T3 Code, choose Settings › Appearance › Omarchy+."
-          color: root.dim
-          font.family: root.fontFamily
           font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
         }
       }
     }
+  }
+
+  // The panel's controls in the bar's colour and font.
+  component PanelButton: Button {
+    fontSize: Style.font.bodySmall
+    bordered: true
+    foreground: root.foreground
+    fontFamily: root.fontFamily
+    enabled: !!root.service
+  }
+
+  component SectionHeader: PanelSectionHeader {
+    foreground: root.foreground
+    fontFamily: root.fontFamily
+  }
+
+  component Note: Text {
+    width: parent.width
+    color: root.dim
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+    wrapMode: Text.WordWrap
   }
 
   component InfoRow: Item {

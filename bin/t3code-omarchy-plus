@@ -20,6 +20,7 @@ https://github.com/jagrat7/omarchy-t3code-thememaxed
 import argparse
 import base64
 import fcntl
+import functools
 import json
 import math
 import os
@@ -110,6 +111,16 @@ BACKDROP_TINT_BOUNDS = (0.1, 0.65)
 BACKDROP_DARK_TARGET = 0.15
 BACKDROP_LIGHT_TARGET = 0.85
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".bmp"}
+# The Hyprland options read, and what is used when Hyprland does not answer.
+HYPRLAND_DEFAULTS = {
+    "decoration:rounding": 0,
+    "general:border_size": 2,
+    "decoration:blur:enabled": True,
+    "decoration:blur:size": 8,
+    "decoration:blur:passes": 1,
+    "decoration:blur:brightness": 0.8172,
+    "decoration:blur:contrast": 0.8916,
+}
 
 CONFIG_TEMPLATE = """\
 # Omarchy+ for T3 Code: https://github.com/jagrat7/omarchy-t3code-thememaxed
@@ -190,10 +201,6 @@ def save_setting(name, value):
     CONFIG.write_text(text)
 
 
-def save_style(style):
-    save_setting("style", f'"{style}"')
-
-
 def tint_value(text):
     """The --tint argument: "auto" or a number from 0 to 1."""
     if text == "auto":
@@ -215,15 +222,26 @@ def command_output(*command):
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def hyprland_option(name, fallback):
-    try:
-        option = json.loads(command_output("hyprctl", "-j", "getoption", name))
-    except ValueError:
-        return fallback
-    for kind in ("int", "float", "bool"):
-        if isinstance(option, dict) and kind in option:
-            return option[kind]
-    return fallback
+@functools.cache
+def hyprland_options():
+    """HYPRLAND_DEFAULTS with the values Hyprland has set, asked for in one call.
+
+    The answers come back separated by blank lines; an option Hyprland does
+    not know answers in plain text and keeps its default.
+    """
+    options = dict(HYPRLAND_DEFAULTS)
+    batch = "; ".join(f"getoption {name}" for name in options)
+    for answer in command_output("hyprctl", "-j", "--batch", batch).split("\n\n\n"):
+        try:
+            option = json.loads(answer)
+        except ValueError:
+            continue
+        if isinstance(option, dict) and option.get("option") in options:
+            for kind in ("int", "float", "bool"):
+                if kind in option:
+                    options[option["option"]] = option[kind]
+                    break
+    return options
 
 
 def hyprland_blur():
@@ -233,17 +251,17 @@ def hyprland_blur():
     blur reaches size * 2^passes pixels, about twice a Gaussian's sigma.
     Vibrancy and noise are not reproduced.
     """
-    if not hyprland_option("decoration:blur:enabled", True):
+    options = hyprland_options()
+    if not options["decoration:blur:enabled"]:
         return None
-    size = hyprland_option("decoration:blur:size", 8)
-    passes = hyprland_option("decoration:blur:passes", 1)
     return {
-        "sigma": size * 2**passes / 2,
-        "brightness": float(hyprland_option("decoration:blur:brightness", 0.8172)),
-        "contrast": float(hyprland_option("decoration:blur:contrast", 0.8916)),
+        "sigma": options["decoration:blur:size"] * 2 ** options["decoration:blur:passes"] / 2,
+        "brightness": float(options["decoration:blur:brightness"]),
+        "contrast": float(options["decoration:blur:contrast"]),
     }
 
 
+@functools.cache
 def screen_width():
     """Logical width of the focused monitor, where the wallpaper is seen at full size."""
     try:
@@ -255,6 +273,11 @@ def screen_width():
         return monitor["width"] / (monitor.get("scale") or 1)
     except (ValueError, KeyError, IndexError, TypeError):
         return 1920
+
+
+def channels(digits):
+    """The 0-255 values of hex digits such as "ed9998ff"."""
+    return [int(digits[i : i + 2], 16) for i in range(0, len(digits), 2)]
 
 
 def css_color(value, alpha=1.0):
@@ -270,7 +293,7 @@ def css_color(value, alpha=1.0):
     if digits is None:
         return None
 
-    red, green, blue, opacity = (int(digits[i : i + 2], 16) for i in (0, 2, 4, 6))
+    red, green, blue, opacity = channels(digits)
     opacity = opacity / 255 * alpha
     if opacity >= 0.999:
         return f"#{digits[:6]}"
@@ -302,14 +325,10 @@ def border_widths(section, prefix):
         parts = [float(part) for part in str(raw).split()] or [1.0]
     except ValueError:
         parts = [1.0]
-    if len(parts) == 1:
-        sides = parts * 4
-    elif len(parts) == 2:
-        sides = [parts[0], parts[1], parts[0], parts[1]]
-    elif len(parts) == 3:
-        sides = [parts[0], parts[1], parts[2], parts[1]]
-    else:
-        sides = parts[:4]
+    # As in CSS, a missing side takes the width across from it (the right, the top's).
+    while len(parts) < 4:
+        parts.append(parts[max(len(parts) - 2, 0)])
+    sides = parts[:4]
     for index, side in enumerate(("top", "right", "bottom", "left")):
         override = section.get(f"{prefix}-width-{side}")
         if isinstance(override, (int, float)):
@@ -321,12 +340,16 @@ def is_image(path):
     return path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
 
 
+def theme_name():
+    try:
+        return (CURRENT_DIR / "theme.name").read_text().strip()
+    except OSError:
+        return ""
+
+
 def theme_wallpapers():
     """The active theme's still wallpapers, the user's own included, in Omarchy's order."""
-    try:
-        name = (CURRENT_DIR / "theme.name").read_text().strip()
-    except OSError:
-        name = ""
+    name = theme_name()
     folders = [THEME_DIR / "backgrounds"]
     if name:
         folders.insert(0, USER_BACKGROUNDS / name)
@@ -339,8 +362,7 @@ def theme_wallpapers():
 
 def first_wallpaper():
     """The theme's first still wallpaper in Omarchy's order, its default."""
-    wallpapers = theme_wallpapers()
-    return wallpapers[0] if wallpapers else None
+    return next(iter(theme_wallpapers()), None)
 
 
 def desktop_wallpaper():
@@ -354,17 +376,13 @@ def random_wallpaper():
     return random.choice(wallpapers) if wallpapers else desktop_wallpaper()
 
 
-def luminance(red, green, blue):
-    """Rec. 709 luma of 0-255 sRGB values, from 0 to 1, as ImageMagick's Gray."""
-    return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
-
-
 def hex_luminance(value):
+    """Rec. 709 luma of a hex colour, from 0 to 1, as ImageMagick's Gray, or None."""
     match = re.fullmatch(r"#?([0-9a-fA-F]{6})", str(value).strip())
     if not match:
         return None
-    digits = match.group(1)
-    return luminance(*(int(digits[i : i + 2], 16) for i in (0, 2, 4)))
+    red, green, blue = channels(match.group(1))
+    return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
 
 
 def picture_luminance(source):
@@ -606,10 +624,13 @@ def omarchy_variables(settings):
             value = shell.get(section, {}).get(key)
         return value if isinstance(value, str) and value else fallback
 
+    def number(section, key, fallback):
+        value = section.get(key)
+        return float(value) if isinstance(value, (int, float)) else fallback
+
     def border(section_name, key, fallback):
         section = shell.get(section_name, {})
-        alpha = section.get(f"{key}-alpha", 1.0)
-        alpha = float(alpha) if isinstance(alpha, (int, float)) else 1.0
+        alpha = number(section, f"{key}-alpha", 1.0)
         parsed, angle = parse_border(resolve(section.get(key), fallback), alpha)
         if not parsed:
             parsed, angle = parse_border(fallback, alpha)
@@ -625,42 +646,26 @@ def omarchy_variables(settings):
     row, row_angle = border("menu", "selected-border", foreground)
 
     menu = shell.get("menu", {})
-    row_fill_alpha = menu.get("selected-background-alpha", 0.08)
-    row_fill = css_color(str(menu.get("selected-background", foreground)), float(row_fill_alpha))
+    row_fill = css_color(str(menu.get("selected-background", foreground)), number(menu, "selected-background-alpha", 0.08))
     top, right, bottom, left = border_widths(menu, "selected-border")
 
     # The theme's tint is the scrim the shell lays over the desktop behind its
-    # menu and launcher. It is used when it is heavier than the minimum.
-    scrim = menu
-    for name in ("menu", "launcher"):
-        section = shell.get(name, {})
-        alpha = section.get("scrim-alpha")
-        if isinstance(alpha, (int, float)) and alpha > scrim.get("scrim-alpha", 0):
-            scrim = section
-    tint_alpha = scrim.get("scrim-alpha", 0)
-    tint_alpha = float(tint_alpha) if isinstance(tint_alpha, (int, float)) else 0.0
+    # menu and launcher (the heavier of the two). It is used when it is heavier
+    # than the minimum.
+    scrim = max((menu, shell.get("launcher", {})), key=lambda section: number(section, "scrim-alpha", 0.0))
     min_tint = settings["min_tint"]
-    tint_alpha = min(max(tint_alpha, min_tint), 1.0)
+    tint_alpha = min(max(number(scrim, "scrim-alpha", 0.0), min_tint), 1.0)
     background = colors.get("background", "#000000")
     tint_color = scrim.get("scrim", background) if tint_alpha > min_tint else background
     tint = css_color(str(tint_color), tint_alpha) or css_color(background, tint_alpha) or "transparent"
-
-    # The backdrop style's cards, of the theme's own colours. The chat
-    # column's tint depends on the wallpaper, so build_css adds it.
-    scene_values = {
-        "scene-card": css_color(background, 0.85),
-        "scene-bubble": css_color(background, 0.45),
-        "scene-line": css_color(foreground, 0.16),
-    }
-    scene_values = {name: value or "transparent" for name, value in scene_values.items()}
 
     font = command_output("fc-match", "monospace", "-f", "%{family}").split(",")[0].strip()
     font = json.dumps(font) if font else "monospace"
 
     return {
         "font": font,
-        "radius": f"{hyprland_option('decoration:rounding', 0)}px",
-        "border-width": f"{hyprland_option('general:border_size', 2)}px",
+        "radius": f"{hyprland_options()['decoration:rounding']}px",
+        "border-width": f"{hyprland_options()['general:border_size']}px",
         "tint": tint,
         "active-border": css_gradient(active, active_angle),
         "inactive-border": inactive,
@@ -675,7 +680,11 @@ def omarchy_variables(settings):
         "row-border-right": f"{right:g}px",
         "row-border-bottom": f"{bottom:g}px",
         "row-border-left": f"{left:g}px",
-        **scene_values,
+        # The backdrop style's cards, of the theme's own colours. The chat
+        # column's tint depends on the wallpaper, so build_css adds it.
+        "scene-card": css_color(background, 0.85) or "transparent",
+        "scene-bubble": css_color(background, 0.45) or "transparent",
+        "scene-line": css_color(foreground, 0.16) or "transparent",
     }
 
 
@@ -684,14 +693,14 @@ def theme_values():
     output = command_output("omarchy-theme-color", "--file", str(THEME_DIR / "colors.toml"), "--all")
     values = {}
     for line in output.splitlines():
-        key, _, value = line.partition("\t")
-        if not key or not _:
+        key, tab, value = line.partition("\t")
+        if not key or not tab:
             continue
         # The same three forms Omarchy offers: {{ key }}, {{ key_strip }}, {{ key_rgb }}.
         values[key] = value
         values[f"{key}_strip"] = value.removeprefix("#")
         if re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
-            values[f"{key}_rgb"] = ",".join(str(int(value[i : i + 2], 16)) for i in (1, 3, 5))
+            values[f"{key}_rgb"] = ",".join(map(str, channels(value[1:])))
     return values
 
 
@@ -721,27 +730,33 @@ def picture_report(image):
     return {"format": match.group(1), "bytes": len(data), "width": width, "height": height}
 
 
-def write_status(settings, published):
-    """Tell the bar widget what was published, written atomically."""
+def write_json(path, data):
+    """Write `data` to `path` in one step, as the apps watching it need."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(prefix=f"{path.name}.", dir=path.parent)
     try:
-        theme = (CURRENT_DIR / "theme.name").read_text().strip()
-    except OSError:
-        theme = ""
+        with os.fdopen(handle, "w") as file:
+            json.dump(data, file, indent=2)
+            file.write("\n")
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def write_status(settings, published):
+    """Tell the bar widget what was published."""
     status = {
         "published": published,
         "time": int(time.time()),
         "style": settings["style"],
-        "backdropTint": settings.get("backdrop_tint", BACKDROP_TINT),
-        "theme": theme,
+        "backdropTint": settings["backdrop_tint"],
+        "theme": theme_name(),
         "limit": CSS_LIMIT,
         **REPORT,
     }
     try:
-        STATUS.parent.mkdir(parents=True, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(prefix=f"{STATUS.name}.", dir=STATUS.parent)
-        with os.fdopen(handle, "w") as file:
-            json.dump(status, file, indent=2)
-        os.replace(temporary, STATUS)
+        write_json(STATUS, status)
     except OSError:
         pass
 
@@ -774,7 +789,7 @@ def build_css(settings):
     if "backdrop" in keep:
         colors = read_toml(THEME_DIR / "colors.toml")
         background = colors.get("background", "#000000")
-        alpha = backdrop_alpha(settings.get("backdrop_tint", BACKDROP_TINT), desktop_wallpaper(), background)
+        alpha = backdrop_alpha(settings["backdrop_tint"], desktop_wallpaper(), background)
         # The chat column takes the full tint; the scene at its sides a third.
         variables["scene-tint"] = css_color(background, alpha) or "transparent"
         REPORT["tint"] = round(alpha, 3)
@@ -841,17 +856,7 @@ def publish(settings):
         write_status(settings, False)
         return True
 
-    # T3 Code watches this file, so the write has to be atomic.
-    TARGET.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix=f"{TARGET.name}.", dir=TARGET.parent)
-    try:
-        with os.fdopen(handle, "w") as file:
-            json.dump(theme, file, indent=2)
-            file.write("\n")
-        os.replace(temporary, TARGET)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    write_json(TARGET, theme)
     write_status(settings, True)
     return True
 
@@ -874,7 +879,7 @@ def main():
     # A first run writes the config with its defaults, so there is a file to edit.
     try:
         if args.style or not CONFIG.exists():
-            save_style(args.style or DEFAULT_STYLE)
+            save_setting("style", f'"{args.style or DEFAULT_STYLE}"')
         if args.tint:
             save_setting("backdrop_tint", '"auto"' if args.tint == "auto" else args.tint)
     except OSError as error:
