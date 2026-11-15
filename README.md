@@ -14,7 +14,7 @@ corners and borders, the shell's menus and popups, and the theme's wallpaper
 behind the app. It follows every theme switch, font change and new wallpaper
 on its own.
 
-<p align="center"><img src="docs/screenshots/panel.webp" width="456" alt="The bar panel: a preview of each style, New wallpaper and Edit config"></p>
+<p align="center"><img src="docs/screenshots/promo.gif" alt="Picking each style from the bar, then T3 Code following six Omarchy themes"></p>
 
 
 ## Install
@@ -28,6 +28,8 @@ plugin runs in the Omarchy shell and republishes the theme whenever the
 desktop changes.
 
 <img src="docs/screenshots/settings.webp" width="344" alt="Thememaxed in T3 Code's Appearance settings">
+
+<p align="center"><img src="docs/screenshots/panel.webp" width="456" alt="The bar panel: a preview of each style, New wallpaper and Edit config"></p>
 
 Click the bar icon to pick a style. **New wallpaper** swaps the picture
 inside T3 Code for another of the theme's, never the one on your desktop.
