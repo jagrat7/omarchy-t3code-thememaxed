@@ -3,8 +3,8 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 
-// The panel behind the bar button: the style, the full-alt tint and a way
-// to publish again.
+// The panel behind the bar button: the style, the full-alt tint, and a new
+// wallpaper or a publish again.
 Panel {
   id: root
   moduleName: "io.github.jagrat7.omarchy-t3code-plus"
@@ -22,9 +22,11 @@ Panel {
   readonly property string style: service ? service.style : ""
   readonly property bool autoTint: !service || service.tint === "auto"
   readonly property bool backdrop: style === "full-alt"
-  // The publisher runs after every theme or wallpaper change, so its time
-  // in the address makes the previews load the new picture.
-  readonly property string wallpaper: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background?" + (status.time || 0)
+  readonly property bool insideWallpaper: style !== "minimal"
+  // The picture inside T3 Code, else the desktop's. The publisher runs after
+  // every theme or wallpaper change, so its time in the address makes the
+  // previews load the new picture.
+  readonly property string wallpaper: "file://" + (status.wallpaper || Quickshell.env("HOME") + "/.local/state/omarchy/current/background") + "?" + (status.time || 0)
 
   readonly property var styles: [
     { value: "minimal", label: "Minimal" },
@@ -175,8 +177,8 @@ Panel {
 
           PanelButton {
             width: actionRow.cellWidth
-            text: root.service && root.service.publishing ? "Publishing…" : "Publish again"
-            tooltipText: "Rebuild the theme now. Full and max also deal a new wallpaper."
+            text: root.service && root.service.publishing ? "Publishing…" : root.insideWallpaper ? "New wallpaper" : "Publish again"
+            tooltipText: root.insideWallpaper ? "Put a different one of the theme's wallpapers inside T3 Code." : "Rebuild the theme now."
             enabled: !!root.service && !root.service.publishing
             onClicked: root.service.publish([])
           }

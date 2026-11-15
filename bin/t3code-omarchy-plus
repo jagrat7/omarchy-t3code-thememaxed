@@ -139,9 +139,9 @@ CONFIG_TEMPLATE = """\
 # The plugin applies changes to this file as soon as it is saved.
 
 # minimal:  the theme's first wallpaper behind the sidebar's header
-# full:     the header, plus a random theme wallpaper behind the conversation
+# full:     the header, plus a theme wallpaper behind the conversation
 # max:      the header and conversation, plus the wallpaper down the sidebar
-# full-alt: the desktop wallpaper, sharp, behind a frosted chat column
+# full-alt: a theme wallpaper, sharp, behind a frosted chat column
 style = "{style}"
 
 # Readability floors for the wallpaper. The theme's own blur (Hyprland) or
@@ -386,9 +386,29 @@ def desktop_wallpaper():
     return current if is_image(current) else first_wallpaper()
 
 
+def shown_wallpaper():
+    """The wallpaper the last publish put inside T3 Code, or None."""
+    try:
+        shown = json.loads(STATUS.read_text()).get("wallpaper")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return Path(shown).resolve() if isinstance(shown, str) else None
+
+
 def random_wallpaper():
-    wallpapers = theme_wallpapers()
-    return random.choice(wallpapers) if wallpapers else desktop_wallpaper()
+    """One of the theme's wallpapers for inside T3 Code, dealt again on each publish.
+
+    It avoids the desktop's, the header's and the one shown now, as far as
+    the theme has others.
+    """
+    wallpapers = [path.resolve() for path in theme_wallpapers()]
+    desktop = desktop_wallpaper()
+    desktop = desktop and desktop.resolve()
+    shown = shown_wallpaper()
+    for taken in ((desktop, *wallpapers[:1], shown), (desktop, *wallpapers[:1]), (desktop,), ()):
+        if free := [path for path in wallpapers if path not in taken]:
+            return random.choice(free)
+    return desktop
 
 
 def hex_luminance(value):
@@ -964,8 +984,11 @@ def write_status(settings, published):
         pass
 
 
-def build_css(settings):
-    """The CSS with the theme's colours and the Omarchy values in, or None when it cannot be used."""
+def build_css(settings, inside=None):
+    """The CSS with the theme's colours and the Omarchy values in, or None when it cannot be used.
+
+    `inside` is the wallpaper for inside T3 Code; a random one when None.
+    """
     try:
         css = render_template(TEMPLATE.read_text(), theme_values())
     except OSError as error:
@@ -989,10 +1012,16 @@ def build_css(settings):
         warn(f"the theme has no value for {', '.join(unresolved)}; publishing the palette without CSS.")
         return None
 
+    if keep & {"background", "backdrop"}:
+        inside = inside or random_wallpaper()
+    else:
+        inside = None
+    if inside:
+        REPORT["wallpaper"] = str(inside)
     if "backdrop" in keep:
         colors = read_toml(THEME_DIR / "colors.toml")
         background = colors.get("background", "#000000")
-        alpha = backdrop_alpha(settings["backdrop_tint"], desktop_wallpaper(), background)
+        alpha = backdrop_alpha(settings["backdrop_tint"], inside, background)
         # The chat column takes the full tint; the scene at its sides a third.
         variables["scene-tint"] = css_color(background, alpha) or "transparent"
         REPORT["tint"] = round(alpha, 3)
@@ -1004,8 +1033,8 @@ def build_css(settings):
         declarations = "".join(f"--omarchy-{name}:{value};" for name, value in used.items())
         return f":root{{{declarations}}}{css}"
 
-    # The header always shows the theme's first wallpaper; the conversation a
-    # random one. Each is encoded only if the style uses it, and the header's picture
+    # The header always shows the theme's first wallpaper; the conversation
+    # the inside one. Each is encoded only if the style uses it, and the header's picture
     # may take at most half of the room left when both are needed.
     wants_header = "var(--omarchy-header-wallpaper)" in css
     wants_background = "var(--omarchy-wallpaper)" in css
@@ -1014,12 +1043,12 @@ def build_css(settings):
         # Sized as if pixelated, the longer of the two renderings.
         variables["wallpaper-rendering"] = "pixelated"
         free = CSS_LIMIT - len(with_variables())
-        variables["wallpaper"], variables["wallpaper-rendering"] = sharp_wallpaper_css(desktop_wallpaper(), free)
+        variables["wallpaper"], variables["wallpaper-rendering"] = sharp_wallpaper_css(inside, free)
     elif wants_header or wants_background:
         free = CSS_LIMIT - len(with_variables())
         share = free // 2 if wants_background else free
         header_source = first_wallpaper() if wants_header else None
-        background_source = random_wallpaper() if wants_background else None
+        background_source = inside if wants_background else None
         # The conversation's picture gets what the header's leaves. The two are
         # encoded side by side: the conversation's first step in the least the
         # header can leave, and should that not fit, its steps again in what
@@ -1079,7 +1108,7 @@ def main():
         choices=list(STYLES),
         help="switch style and remember it: minimal (header), full (header and "
         "conversation background), max (the sidebar as well) or full-alt "
-        "(the sharp desktop wallpaper behind a frosted chat column)",
+        "(a sharp wallpaper behind a frosted chat column)",
     )
     parser.add_argument(
         "--tint",

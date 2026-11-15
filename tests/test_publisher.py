@@ -197,6 +197,30 @@ class Settings(unittest.TestCase):
         self.assertEqual(settings["min_tint"], 1.0)
 
 
+class InsideWallpaper(unittest.TestCase):
+    """The wallpaper inside T3 Code avoids the desktop's, the header's and the one shown, when it can."""
+
+    def pick(self, names, desktop, shown=None):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        paths = [Path(folder.name) / name for name in names]
+        for path in paths:
+            path.touch()
+        shown = paths[shown].resolve() if shown is not None else None
+        with mock.patch.object(publisher, "theme_wallpapers", return_value=paths), \
+                mock.patch.object(publisher, "desktop_wallpaper", return_value=paths[desktop]), \
+                mock.patch.object(publisher, "shown_wallpaper", return_value=shown):
+            return {publisher.random_wallpaper().name for _ in range(40)}
+
+    def test_skips_the_desktop_the_header_and_the_one_shown(self):
+        self.assertEqual(self.pick(["0.jpg", "1.jpg", "2.jpg", "3.jpg"], desktop=1, shown=2), {"3.jpg"})
+
+    def test_falls_back_to_the_one_shown_then_the_header_then_the_desktop(self):
+        self.assertEqual(self.pick(["0.jpg", "1.jpg", "2.jpg"], desktop=1, shown=2), {"2.jpg"})
+        self.assertEqual(self.pick(["0.jpg", "1.jpg"], desktop=1), {"0.jpg"})
+        self.assertEqual(self.pick(["0.jpg"], desktop=0), {"0.jpg"})
+
+
 class Budget(unittest.TestCase):
     """build_css gives the pictures what the CSS limit leaves."""
 
