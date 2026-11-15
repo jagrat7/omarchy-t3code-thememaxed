@@ -52,7 +52,7 @@ THEME_NAME = "Thememaxed"
 STATUS = STATE_HOME / "omarchy-t3code-plus/status.json"
 LOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "t3code-omarchy-plus.lock"
 # T3 Code rejects a theme whose CSS is longer than this.
-CSS_LIMIT = 20000
+CSS_LIMIT = 50000
 # The wallpapers have to travel inside that CSS, so each is encoded as AVIF at
 # the first of these widths and qualities that fits in what the rest leaves
 # free. They are blurred first, so small images are enough. The header's
@@ -65,10 +65,10 @@ HEADER_STEPS = ((640, 45), (480, 40), (480, 30), (320, 30), (240, 30))
 # installed: the widest picture that holds SHARP_GOOD_QUALITY within the room,
 # at the best quality that still fits. Without it, the first of SHARP_STEPS
 # that fits.
-SHARP_WIDTHS = (1920, 1600, 1280, 960)
+SHARP_WIDTHS = (2560, 1920, 1600, 1280, 960)
 SHARP_GOOD_QUALITY = 20
 SHARP_STEPS = (
-    (1920, 35), (1600, 35), (1600, 25), (1280, 30), (1280, 20), (960, 25), (960, 15), (640, 20),
+    (2560, 35), (1920, 35), (1600, 35), (1600, 25), (1280, 30), (1280, 20), (960, 25), (960, 15), (640, 20),
 )
 SHARP_TOP_QUALITY = 90
 SHARP_ENCODER = ("-s", "4", "-d", "10", "-y", "420", "-a", "tune=ssim")
