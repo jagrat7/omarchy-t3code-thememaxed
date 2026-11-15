@@ -12,7 +12,7 @@ Run by the plugin's service (or the hooks of the standalone install) whenever
 the theme, font, wallpaper or config changes. Safe to run by hand:
 
     t3code-omarchy-plus                    publish the current theme
-    t3code-omarchy-plus --style too-much   switch style, then publish
+    t3code-omarchy-plus --style max        switch style, then publish
 
 https://github.com/jagrat7/omarchy-t3code-thememaxed
 """
@@ -59,7 +59,7 @@ CSS_LIMIT = 20000
 # picture is shown at the sidebar's width, so it starts smaller.
 BACKGROUND_STEPS = ((960, 45), (640, 45), (640, 30), (480, 30), (320, 30))
 HEADER_STEPS = ((640, 45), (480, 40), (480, 30), (320, 30), (240, 30))
-# The backdrop style shows its one wallpaper sharp behind the conversation,
+# The full-alt style shows its one wallpaper sharp behind the conversation,
 # so it has all the room to itself. avifenc (10-bit, slow, tuned for SSIM)
 # packs far more detail into that room than ImageMagick, so it is used when
 # installed: the widest picture that holds SHARP_GOOD_QUALITY within the room,
@@ -98,8 +98,8 @@ PIXEL_ART_MAX_BLOCK = 16
 STYLES = {
     "minimal": {"header"},
     "full": {"header", "background"},
-    "too-much": {"header", "background", "sidebar"},
-    "backdrop": {"backdrop"},
+    "max": {"header", "background", "sidebar"},
+    "full-alt": {"backdrop"},
 }
 DEFAULT_STYLE = "full"
 # The least the wallpaper is blurred and tinted, so text stays readable on any
@@ -108,7 +108,7 @@ DEFAULT_STYLE = "full"
 # ground is over the picture, from 0 to 1. Both can be set in CONFIG.
 MIN_BLUR = 20
 MIN_TINT = 0.75
-# The backdrop style tints its frosted chat column only as much as the
+# The full-alt style tints its frosted chat column only as much as the
 # wallpaper's brightness needs: a dark picture is left nearly as it is, as
 # Claude's scenes are, and a bright one is dimmed to about their brightness.
 # The scene at the column's sides takes a third of that. The bounds keep a
@@ -138,8 +138,8 @@ CONFIG_TEMPLATE = """\
 
 # minimal:  the theme's first wallpaper behind the sidebar's header
 # full:     the header, plus a random theme wallpaper behind the conversation
-# too-much: the header and conversation, plus the wallpaper down the sidebar
-# backdrop: the desktop wallpaper, sharp, behind a frosted chat column
+# max:      the header and conversation, plus the wallpaper down the sidebar
+# full-alt: the desktop wallpaper, sharp, behind a frosted chat column
 style = "{style}"
 
 # Readability floors for the wallpaper. The theme's own blur (Hyprland) or
@@ -147,7 +147,7 @@ style = "{style}"
 # min_blur = 20     # Gaussian sigma, in screen pixels
 # min_tint = 0.75   # opacity of the theme background over the picture, 0 to 1
 
-# backdrop only: how much the theme background covers the wallpaper behind
+# full-alt only: how much the theme background covers the wallpaper behind
 # the chat column, 0 to 1 (the sides take a third). "auto" sets it from the
 # wallpaper's brightness.
 # backdrop_tint = "auto"
@@ -880,7 +880,7 @@ def omarchy_variables(settings):
         "row-border-right": f"{right:g}px",
         "row-border-bottom": f"{bottom:g}px",
         "row-border-left": f"{left:g}px",
-        # The backdrop style's cards, of the theme's own colours. The chat
+        # The full-alt style's cards, of the theme's own colours. The chat
         # column's tint depends on the wallpaper, so build_css adds it.
         "scene-card": css_color(background, 0.85) or "transparent",
         "scene-bubble": css_color(background, 0.45) or "transparent",
@@ -1075,13 +1075,13 @@ def main():
         "--style",
         choices=list(STYLES),
         help="switch style and remember it: minimal (header), full (header and "
-        "conversation background), too-much (the sidebar as well) or backdrop "
+        "conversation background), max (the sidebar as well) or full-alt "
         "(the sharp desktop wallpaper behind a frosted chat column)",
     )
     parser.add_argument(
         "--tint",
         type=tint_value,
-        help='set and remember the backdrop tint: "auto" (from the wallpaper\'s brightness) or 0 to 1',
+        help='set and remember the full-alt tint: "auto" (from the wallpaper\'s brightness) or 0 to 1',
     )
     args = parser.parse_args()
     # A first run writes the config with its defaults, so there is a file to edit.

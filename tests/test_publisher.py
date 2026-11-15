@@ -35,13 +35,13 @@ class Blocks(unittest.TestCase):
         self.assertIn('[data-workspace-area="conversation"]', css)
         self.assertNotIn("100% 100%, cover", css)
 
-    def test_too_much_adds_the_sidebar(self):
-        css = self.css_for("too-much")
+    def test_max_adds_the_sidebar(self):
+        css = self.css_for("max")
         self.assertIn('[data-workspace-area="conversation"]', css)
         self.assertIn("100% 100%, cover", css)
 
-    def test_backdrop_drops_the_blurred_parts(self):
-        css = self.css_for("backdrop")
+    def test_full_alt_drops_the_blurred_parts(self):
+        css = self.css_for("full-alt")
         self.assertIn("var(--omarchy-wallpaper)", css)
         self.assertIn("var(--omarchy-wallpaper) center / cover no-repeat,", css)
         self.assertIn("backdrop-filter: blur(", css)
@@ -49,7 +49,7 @@ class Blocks(unittest.TestCase):
         self.assertNotIn("var(--omarchy-header-wallpaper)", css)
         self.assertNotIn("var(--omarchy-tint)", css)
 
-    def test_backdrop_wallpaper_is_not_blurred(self):
+    def test_full_alt_wallpaper_is_not_blurred(self):
         calls = []
 
         def run(command, **kwargs):
@@ -78,11 +78,11 @@ class Blocks(unittest.TestCase):
     def test_settings_are_saved_in_place(self):
         with tempfile.TemporaryDirectory() as folder, \
                 mock.patch.object(publisher, "CONFIG", Path(folder) / "config.toml"):
-            publisher.save_setting("style", '"backdrop"')
+            publisher.save_setting("style", '"full-alt"')
             publisher.save_setting("backdrop_tint", "0.3")
             publisher.save_setting("backdrop_tint", '"auto"')
             lines = [line for line in publisher.CONFIG.read_text().splitlines() if line and not line.startswith("#")]
-        self.assertEqual(lines, ['style = "backdrop"', 'backdrop_tint = "auto"'])
+        self.assertEqual(lines, ['style = "full-alt"', 'backdrop_tint = "auto"'])
 
     def test_tint_takes_auto_or_a_fraction(self):
         self.assertEqual(publisher.tint_value("auto"), "auto")
@@ -176,10 +176,10 @@ class Settings(unittest.TestCase):
 
     def test_saving_keeps_the_rest_of_the_file(self):
         self.config.write_text('style = "full"\nmin_tint = 0.9\n')
-        publisher.save_setting("style", '"too-much"')
-        self.assertEqual(self.config.read_text(), 'style = "too-much"\nmin_tint = 0.9\n')
+        publisher.save_setting("style", '"max"')
+        self.assertEqual(self.config.read_text(), 'style = "max"\nmin_tint = 0.9\n')
         settings = publisher.load_settings()
-        self.assertEqual(settings["style"], "too-much")
+        self.assertEqual(settings["style"], "max")
         self.assertEqual(settings["min_tint"], 0.9)
 
     def test_bad_values_fall_back(self):
@@ -231,8 +231,8 @@ class Budget(unittest.TestCase):
         return calls, css
 
     def test_the_backdrop_gets_what_the_limit_leaves(self):
-        (small,), _ = self.budgets("backdrop", 20000)
-        (large,), _ = self.budgets("backdrop", 50000)
+        (small,), _ = self.budgets("full-alt", 20000)
+        (large,), _ = self.budgets("full-alt", 50000)
         self.assertEqual(large - small, 30000)
         self.assertLess(small, 20000)
 
@@ -243,9 +243,9 @@ class Budget(unittest.TestCase):
         self.assertLessEqual(header + background, 50000)
 
     def test_css_over_the_limit_is_dropped(self):
-        _, css = self.budgets("backdrop", 20000, picture="x" * 30000)
+        _, css = self.budgets("full-alt", 20000, picture="x" * 30000)
         self.assertIsNone(css)
-        _, css = self.budgets("backdrop", 50000, picture="x" * 30000)
+        _, css = self.budgets("full-alt", 50000, picture="x" * 30000)
         self.assertIsNotNone(css)
 
 

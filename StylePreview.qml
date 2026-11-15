@@ -12,10 +12,10 @@ Item {
   property color background: "black"
   property color accent: "white"
 
-  readonly property bool header: style === "minimal" || style === "full" || style === "too-much"
-  readonly property bool conversation: style === "full" || style === "too-much"
-  readonly property bool sidebar: style === "too-much"
-  readonly property bool backdrop: style === "backdrop"
+  readonly property bool header: style === "minimal" || style === "full" || style === "max"
+  readonly property bool conversation: style === "full" || style === "max"
+  readonly property bool sidebar: style === "max"
+  readonly property bool backdrop: style === "full-alt"
 
   readonly property real sidebarWidth: Math.round(width * 0.3)
   readonly property real headerHeight: Math.round(height * 0.2)

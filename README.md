@@ -14,7 +14,7 @@ corners and borders, the shell's menus and popups, and the theme's wallpaper
 behind the app. It follows every theme switch, font change and new wallpaper
 on its own.
 
-![T3 Code with Thememaxed in the backdrop style, on the Last Call theme](docs/screenshots/backdrop.webp)
+![T3 Code with Thememaxed in the full-alt style, on the Last Call theme](docs/screenshots/full-alt.webp)
 
 Omarchy already publishes a colours-only T3 Code theme called **Omarchy**.
 This plugin leaves that one alone and publishes a second theme, **Thememaxed**,
@@ -35,7 +35,7 @@ desktop changes.
 The plugin also puts its icon, T3 dripping paint, in the bar. Click it for a
 panel with a small preview of each style, drawn in your theme's colours with
 your wallpaper where that style puts it. Click one to switch. Under
-`backdrop` a slider sets the chat column's tint. The panel can also publish
+`full-alt` a slider sets the chat column's tint. The panel can also publish
 again or open the config, and a middle click on the icon publishes again.
 
 To move or remove the icon, use the bar's widget settings like any other
@@ -53,8 +53,8 @@ The wallpaper comes in three strengths, plus a sharp alternative to `full`:
 | --- | --- | --- | --- |
 | `minimal` | Theme's first wallpaper | Plain | Plain |
 | `full` (default) | Theme's first wallpaper | Random theme wallpaper | Plain |
-| `too-much` | Theme's first wallpaper | Random theme wallpaper | Theme's first wallpaper |
-| `backdrop` | Plain | Desktop wallpaper, sharp, behind a frosted chat column | Plain |
+| `max` | Theme's first wallpaper | Random theme wallpaper | Theme's first wallpaper |
+| `full-alt` | Plain | Desktop wallpaper, sharp, behind a frosted chat column | Plain |
 
 <table>
   <tr>
@@ -62,8 +62,8 @@ The wallpaper comes in three strengths, plus a sharp alternative to `full`:
     <td><img src="docs/screenshots/full.webp" alt="full style"><br><code>full</code></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/too-much.webp" alt="too-much style"><br><code>too-much</code></td>
-    <td><img src="docs/screenshots/backdrop.webp" alt="backdrop style"><br><code>backdrop</code></td>
+    <td><img src="docs/screenshots/max.webp" alt="max style"><br><code>max</code></td>
+    <td><img src="docs/screenshots/full-alt.webp" alt="full-alt style"><br><code>full-alt</code></td>
   </tr>
 </table>
 
@@ -76,13 +76,13 @@ is republished. Every picture is blurred and tinted enough to keep text
 readable, more if the theme's own blur or scrim is stronger.
 
 A new thread has only the heading and the composer, so there `full` and
-`too-much` tint the wallpaper half as much, darker in the middle, and
-`backdrop` drops its frosted column to show the whole wallpaper, with a
+`max` tint the wallpaper half as much, darker in the middle, and
+`full-alt` drops its frosted column to show the whole wallpaper, with a
 soft tint behind the heading and composer. The row under
 the composer (machine, checkout, branch) is plain text over the wallpaper in
 every style.
 
-`backdrop` is the look of Claude Code's desktop themes: the wallpaper on your
+`full-alt` is the look of Claude Code's desktop themes: the wallpaper on your
 desktop, not blurred, as the scene behind the conversation, with the chat
 column as frosted glass over it. The glass blurs and tints the picture behind
 the messages and fades out at its edges, so the scene stays sharp at the
@@ -103,16 +103,16 @@ Pick a style in `~/.config/omarchy-t3code-plus/config.toml`. The plugin
 applies the file as soon as it is saved:
 
 ```toml
-style = "full"         # minimal, full, too-much or backdrop
+style = "full"         # minimal, full, max or full-alt
 min_blur = 20          # least blur, as a Gaussian sigma in screen pixels
 min_tint = 0.75        # least opacity of the theme background over the picture
-backdrop_tint = "auto" # backdrop only: tint, 0 to 1, or "auto" from the wallpaper
+backdrop_tint = "auto" # full-alt only: tint, 0 to 1, or "auto" from the wallpaper
 ```
 
 Or from the bar's panel, or from a terminal, which also deals a new random wallpaper:
 
 ```bash
-~/.config/omarchy/plugins/io.github.jagrat7.omarchy-t3code-plus/bin/t3code-omarchy-plus --style too-much
+~/.config/omarchy/plugins/io.github.jagrat7.omarchy-t3code-plus/bin/t3code-omarchy-plus --style max
 ~/.config/omarchy/plugins/io.github.jagrat7.omarchy-t3code-plus/bin/t3code-omarchy-plus --tint 0.4   # or auto
 ```
 
@@ -142,7 +142,7 @@ omarchy plugin remove io.github.jagrat7.omarchy-t3code-plus
 After removing it, choose **Omarchy** in T3 Code again. The settings stay in
 `~/.config/omarchy-t3code-plus/`, the last published theme in
 `~/.t3/userdata/themes/omarchy-plus.json`, and the last status and the
-backdrop's cache of recent wallpapers in `~/.local/state/omarchy-t3code-plus/`;
+full-alt style's cache of recent wallpapers in `~/.local/state/omarchy-t3code-plus/`;
 delete them if you like.
 
 ## Without the plugin
@@ -152,7 +152,7 @@ or the other, not both.
 
 ```bash
 git clone https://github.com/jagrat7/omarchy-t3code-thememaxed.git
-bash omarchy-t3code-thememaxed/scripts/install.sh full    # or minimal, too-much, backdrop
+bash omarchy-t3code-thememaxed/scripts/install.sh full    # or minimal, max, full-alt
 ```
 
 This puts `t3code-omarchy-plus` in `~/.local/bin` and adds `theme-set` and

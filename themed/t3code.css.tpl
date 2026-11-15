@@ -175,10 +175,10 @@
    floors that keep text readable: --omarchy-header-wallpaper is the
    theme's first wallpaper, --omarchy-wallpaper a random one of the theme's.
    The chosen style keeps some of the @part blocks below: minimal keeps the
-   header, full adds the background, too-much adds the sidebar, and backdrop
+   header, full adds the background, max adds the sidebar, and full-alt
    keeps only its own. */
 
-/* @part header (minimal, full, too-much): the theme's first wallpaper sits behind the sidebar's
+/* @part header (minimal, full, max): the theme's first wallpaper sits behind the sidebar's
    header row. The picture is scaled to the sidebar's width and the row shows
    a band from its middle, fading into the sidebar below. The header holds
    only a few labels, so it carries 55% of the tint. Change 0.45 to slice the
@@ -200,7 +200,7 @@
 }
 /* @end */
 
-/* @part background (full, too-much): a random wallpaper of the theme lies
+/* @part background (full, max): a random wallpaper of the theme lies
    behind the conversation, centred and tinted evenly. */
 [data-workspace-area="conversation"] {
   background-image:
@@ -229,7 +229,7 @@
 }
 /* @end */
 
-/* @part sidebar (too-much): the theme's first wallpaper runs down the whole
+/* @part sidebar (max): the theme's first wallpaper runs down the whole
    sidebar. The header row keeps its lighter tint and the threads below take
    the full one. */
 [data-slot="sidebar-inner"] {
@@ -241,7 +241,7 @@
 }
 /* @end */
 
-/* @part backdrop (backdrop): the desktop wallpaper as a scene behind the
+/* @part backdrop (full-alt): the desktop wallpaper as a scene behind the
    conversation, sharp at the sides. The chat column is frosted glass: the
    picture behind it blurred and tinted only as much as the wallpaper's
    brightness needs, fading out at its edges. The glass sits behind the

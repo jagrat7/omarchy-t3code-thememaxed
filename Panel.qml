@@ -3,7 +3,7 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 
-// The panel behind the bar button: the style, the backdrop's tint and a way
+// The panel behind the bar button: the style, the full-alt tint and a way
 // to publish again.
 Panel {
   id: root
@@ -21,7 +21,7 @@ Panel {
   readonly property var status: service ? service.status : ({})
   readonly property string style: service ? service.style : ""
   readonly property bool autoTint: !service || service.tint === "auto"
-  readonly property bool backdrop: style === "backdrop"
+  readonly property bool backdrop: style === "full-alt"
   // The publisher runs after every theme or wallpaper change, so its time
   // in the address makes the previews load the new picture.
   readonly property string wallpaper: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/current/background?" + (status.time || 0)
@@ -29,8 +29,8 @@ Panel {
   readonly property var styles: [
     { value: "minimal", label: "Minimal" },
     { value: "full", label: "Full" },
-    { value: "too-much", label: "Too much" },
-    { value: "backdrop", label: "Backdrop" }
+    { value: "max", label: "Max" },
+    { value: "full-alt", label: "Full alt" }
   ]
 
   function ago(seconds) {
@@ -176,7 +176,7 @@ Panel {
           PanelButton {
             width: actionRow.cellWidth
             text: root.service && root.service.publishing ? "Publishing…" : "Publish again"
-            tooltipText: "Rebuild the theme now. Full and too-much also deal a new wallpaper."
+            tooltipText: "Rebuild the theme now. Full and max also deal a new wallpaper."
             enabled: !!root.service && !root.service.publishing
             onClicked: root.service.publish([])
           }
