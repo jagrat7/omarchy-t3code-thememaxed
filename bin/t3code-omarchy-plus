@@ -70,6 +70,24 @@ SHARP_GOOD_QUALITY = 20
 SHARP_STEPS = (
     (1920, 35), (1600, 35), (1600, 25), (1280, 30), (1280, 20), (960, 25), (960, 15), (640, 20),
 )
+SHARP_TOP_QUALITY = 90
+SHARP_ENCODER = ("-s", "4", "-d", "10", "-y", "420", "-a", "tune=ssim")
+# Each of those encodes takes most of a second, so the search aims them: a
+# quick sketch at a fast speed shows how the picture grows with quality, its
+# sizes times SHARP_SKETCH_RATIO (about what the slow encoder saves) guess
+# where the room runs out, and slow encodes check the guess, each one sharpening
+# the next. A picture grows with its width to the power SHARP_WIDTH_POWER, and
+# by about SHARP_LEVEL_GROWTH (as a natural log) for each of avifenc's levels.
+SHARP_SKETCH = ("-s", "6", "-d", "10", "-y", "420", "-a", "tune=ssim")
+SHARP_SKETCH_QUALITIES = (5, 20, 45, 70)
+SHARP_SKETCH_RATIO = 0.85
+SHARP_WIDTH_POWER = 1.6
+SHARP_LEVEL_GROWTH = 0.065
+# What the encodes of the last few wallpapers measured, and the picture chosen,
+# so publishing one again (after a font, tint or config change) encodes little
+# or nothing.
+SHARP_CACHE = STATUS.parent / "sharp-cache.json"
+SHARP_CACHE_ENTRIES = 8
 # The middle of the picture lies behind the frosted chat column, where T3 Code
 # blurs it anyway, so it is softened before encoding: detail there would only
 # take room from the sides. SOFT_MIDDLE is the softened band, as fractions of
@@ -420,25 +438,40 @@ def in_parallel(function, items):
 
 def picture_size(source):
     """The width and height of the picture at `source`, or None."""
-    size = command_output("magick", "identify", "-format", "%w %h", f"{source}[0]").split()
+    # -ping reads only the header, not the pixels.
+    size = command_output("magick", "identify", "-ping", "-format", "%w %h", f"{source}[0]").split()
     return (int(size[0]), int(size[1])) if len(size) == 2 and all(n.isdigit() for n in size) else None
 
 
 def pixel_block(source, width, height):
     """The side of the square each pixel of pixel art is drawn as, or 1 for any other picture."""
+    # The share of pixels that may differ, for a signature or a stray mark.
+    tolerance = 0.0002
 
-    def exact(block):
-        # Shrunk to one pixel per block and grown back, pixel art comes back as it was.
+    def mismatch(block, rows):
+        """The share of the top `rows` rows that differ once shrunk to one pixel per block and grown back."""
+        crop = ["-crop", f"{width}x{rows}+0+0", "+repage"] if rows < height else []
         command = [
-            "magick", f"{source}[0]", "(", "+clone", "-sample", f"{width // block}x{height // block}!",
-            "-sample", f"{width}x{height}!", ")", "-fuzz", "1%", "-metric", "AE", "-compare",
+            "magick", f"{source}[0]", *crop, "(", "+clone", "-sample", f"{width // block}x{rows // block}!",
+            "-sample", f"{width}x{rows}!", ")", "-fuzz", "1%", "-metric", "AE", "-compare",
             "-format", "%[distortion]", "info:",
         ]
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=20)
-            return result.returncode == 0 and float(result.stdout) <= 0.0002
+            return float(result.stdout) if result.returncode == 0 else None
         except (OSError, subprocess.TimeoutExpired, ValueError):
+            return None
+
+    def exact(block):
+        # An eighth of the picture first, a fifth of the work: any picture
+        # within the tolerance whole is within it scaled up to the eighth, so
+        # one that fails there is not pixel art and most photos stop there.
+        rows = max(block, height // 8 // block * block)
+        part = mismatch(block, rows)
+        if part is None or part > tolerance * height / rows:
             return False
+        whole = part if rows == height else mismatch(block, height)
+        return whole is not None and whole <= tolerance
 
     blocks = [block for block in range(2, PIXEL_ART_MAX_BLOCK + 1) if width % block == 0 and height % block == 0]
     # Art drawn in blocks of n is also drawn in blocks of each factor of n, so
@@ -452,6 +485,165 @@ def pixel_block(source, width, height):
     return max(passed, default=1)
 
 
+def avif_level(quality):
+    """How finely avifenc -q `quality` encodes, 0 to 63.
+
+    avifenc rounds the quality to one of 64 quantizers, so qualities of the
+    same level make the same file.
+    """
+    return 63 - ((100 - quality) * 63 + 50) // 100
+
+
+def sharp_known(sizes, room, width, quality):
+    """Whether (width, quality) fits in `room`, as far as the encodes in `sizes` tell, or None.
+
+    A picture grows with its width and level, so one that fits vouches for
+    every narrower and coarser one, and one that does not for every wider and
+    finer.
+    """
+    level = avif_level(quality)
+    if any(w >= width and avif_level(q) >= level and n <= room for (w, q), n in sizes.items()):
+        return True
+    if any(w <= width and avif_level(q) <= level and n > room for (w, q), n in sizes.items()):
+        return False
+    return None
+
+
+def sharp_choice(sizes, room, widths, good, top, estimate):
+    """The width and quality the sharp picture takes, and the encodes still needed to be sure.
+
+    The widest of `widths` that holds quality `good` within `room` bytes wins,
+    at the highest quality up to `top` that fits; when none holds it, the
+    narrowest at the highest quality that fits. `sizes` maps the (width,
+    quality) pairs encoded so far to their bytes; what they leave open (see
+    sharp_known), estimate(width, quality) guesses.
+
+    Returns (width, quality), or None when nothing fits, and the pairs to
+    encode before that answer is certain; none when it is.
+    """
+    measured = {(width, avif_level(quality)): length for (width, quality), length in sizes.items()}
+
+    def known(width, quality):
+        return sharp_known(sizes, room, width, quality)
+
+    def fits(width, quality):
+        answer = known(width, quality)
+        return estimate(width, quality) <= room if answer is None else answer
+
+    holds = next((width for width in widths if fits(width, good)), None)
+    width = holds or widths[-1]
+    low, high = (good, top) if holds else (0, good - 1)
+    quality = next((q for q in range(high, low - 1, -1) if fits(width, q)), None)
+    # That one quality more does not fit, and the next wider picture does not hold `good`.
+    checks = [(width, quality + 1)] if quality is not None and quality < high else []
+    checks += [(width, low)] if quality is None else []
+    if width != widths[0] or not holds:
+        checks.append((widths[widths.index(width) - 1] if holds else width, good))
+    needed = [pair for pair in dict.fromkeys(checks) if known(*pair) is None]
+    if quality is not None and (width, avif_level(quality)) not in measured:
+        needed.insert(0, (width, quality))
+    return (width, quality) if quality is not None else None, needed
+
+
+def sharp_estimate(sizes, sketch, widths):
+    """estimate(width, quality): the bytes sharp_choice should expect, from what was encoded.
+
+    `sketch` maps qualities to the bytes of quick encodes at widths[0].
+    """
+    sketch = {avif_level(quality): length for quality, length in sketch.items()}
+
+    def along(points, level):
+        # Bytes grow about exponentially with the level: a straight line in
+        # log space through the two points around `level`, or nearest to it.
+        if len(points) < 2:
+            anchor, length = next(iter(points.items()), (0, 1))
+            return length * math.exp(SHARP_LEVEL_GROWTH * (level - anchor))
+        levels = sorted(points)
+        index = min(max(sum(l <= level for l in levels), 1), len(levels) - 1)
+        a, b = levels[index - 1], levels[index]
+        share = (level - a) / (b - a)
+        return points[a] ** (1 - share) * points[b] ** share
+
+    def estimate(width, quality):
+        level = avif_level(quality)
+        same = {avif_level(q): n for (w, q), n in sizes.items() if w == width}
+        below = [l for l in same if l <= level]
+        above = [l for l in same if l >= level]
+        if below and above:
+            return along({l: same[l] for l in (max(below), min(above))}, level)
+        if same:
+            # Shaped like the sketch, through the nearest encode.
+            anchor = max(below) if below else min(above)
+            return same[anchor] * along(sketch, level) / along(sketch, anchor)
+        if sizes:
+            near = min({w for w, _ in sizes}, key=lambda w: abs(w - width))
+            return estimate(near, quality) * (width / near) ** SHARP_WIDTH_POWER
+        return along(sketch, level) * SHARP_SKETCH_RATIO * (width / widths[0]) ** SHARP_WIDTH_POWER
+
+    return estimate
+
+
+def sharp_search(sizes, room, widths, good, top, measure, sketch):
+    """Encode until sharp_choice is sure, adding to `sizes`; its answer, or None.
+
+    measure(pairs) encodes (width, quality) pairs side by side and returns
+    their bytes (None for a failure); sketch(width) returns the bytes of quick
+    encodes at a few qualities, as sharp_estimate takes them.
+    """
+    guide = {}
+    while True:
+        first = not guide and not any(width in widths for width, _ in sizes)
+        if first:
+            # A wallpaper never measured: sketch it, then encode where the
+            # sketch says the room runs out, alone, to learn how far off the
+            # sketch is before encoding around it.
+            guide = sketch(widths[0]) or {SHARP_GOOD_QUALITY: 1}
+        chosen, needed = sharp_choice(sizes, room, widths, good, top, sharp_estimate(sizes, guide, widths))
+        if not needed:
+            return chosen
+        if first:
+            needed = needed[:1]
+        lengths = measure(needed)
+        if None in lengths:
+            return None
+        sizes.update(zip(needed, lengths))
+
+
+def sharp_cache_key(source):
+    """What the sharp picture of `source` depends on, as a string, or None."""
+    try:
+        stat = Path(source).stat()
+    except OSError:
+        return None
+    tools = [shutil.which(tool) for tool in ("avifenc", "magick")]
+    recipe = [
+        SHARP_ENCODER, SHARP_WIDTHS, SHARP_GOOD_QUALITY, SHARP_TOP_QUALITY, SOFT_MIDDLE, SOFT_FADE,
+        SOFT_BLUR, PIXEL_ART_MAX_BLOCK, [os.stat(tool).st_mtime_ns if tool else 0 for tool in tools],
+    ]
+    return json.dumps([str(source), stat.st_mtime_ns, stat.st_size, recipe])
+
+
+def read_sharp_cache():
+    try:
+        entries = json.loads(SHARP_CACHE.read_text())
+        return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def write_sharp_cache(entry):
+    """Keep `entry` first in SHARP_CACHE, before the most recent others."""
+    entries = [entry] + [old for old in read_sharp_cache() if old.get("key") != entry["key"]]
+    try:
+        SHARP_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(prefix=f"{SHARP_CACHE.name}.", dir=SHARP_CACHE.parent)
+        with os.fdopen(handle, "w") as file:
+            json.dump(entries[:SHARP_CACHE_ENTRIES], file)
+        os.replace(temporary, SHARP_CACHE)
+    except OSError:
+        pass
+
+
 def sharp_wallpaper_css(source, budget):
     """The wallpaper unblurred but for its middle, as large and clean as `budget` characters allow.
 
@@ -462,10 +654,28 @@ def sharp_wallpaper_css(source, budget):
         return "none", "auto"
     if not shutil.which("avifenc"):
         return wallpaper_css(source, budget, SHARP_STEPS), "auto"
-    size = picture_size(source)
-    if size is None:
+    key = sharp_cache_key(source)
+    entry = next((old for old in read_sharp_cache() if key and old.get("key") == key), None) or {}
+    entry = {
+        "key": key,
+        "size": entry.get("size") or picture_size(source),
+        "block": entry.get("block"),
+        "sizes": entry.get("sizes", {}),
+        "webp": entry.get("webp"),
+        "picture": entry.get("picture"),
+    }
+    if entry["size"] is None:
         return "none", "auto"
-    block = pixel_block(source, *size)
+    size = entry["size"]
+    # (width, quality): bytes, of every encode measured for this wallpaper.
+    sizes = {}
+    for pair, length in entry["sizes"].items():
+        width, _, quality = pair.partition("x")
+        sizes[int(width), int(quality)] = length
+    encoded = {}
+    if entry["picture"]:
+        width, quality, data = entry["picture"]
+        encoded[width, quality] = base64.b64decode(data)
 
     def as_css(kind, data):
         return f'url("data:image/{kind};base64,{base64.b64encode(data).decode()}")'
@@ -474,13 +684,17 @@ def sharp_wallpaper_css(source, budget):
         return (budget - len(as_css(kind, b""))) * 3 // 4
 
     with tempfile.TemporaryDirectory() as folder:
+        pngs = {}
 
-        def picture(width, soften=True):
-            """The wallpaper at `width` as a PNG, its middle softened, or None."""
+        def picture(width, soften=True, sample=None):
+            """The wallpaper at `width` as an uncompressed PNG, its middle softened, or None."""
+            sample = entry["block"] > 1 if sample is None else sample
+            if (width, soften, sample) in pngs:
+                return pngs[width, soften, sample]
             height = round(size[1] * width / size[0])
-            png = Path(folder) / f"{width}{'s' if soften else ''}.png"
+            png = Path(folder) / f"{width}{'s' if soften else ''}{'p' if sample else ''}.png"
             # -sample keeps pixel art's hard edges; photos are resized smoothly.
-            command = ["magick", f"{source}[0]", "-sample" if block > 1 else "-resize", f"{width}x{height}!", "-strip"]
+            command = ["magick", f"{source}[0]", "-sample" if sample else "-resize", f"{width}x{height}!", "-strip"]
             if soften:
                 # Blurred at a quarter of the size, which looks the same and
                 # is far quicker, then laid over the middle through a band
@@ -494,88 +708,91 @@ def sharp_wallpaper_css(source, budget):
                     "-compose", "Over", "-composite", "-alpha", "off",
                 ]
             try:
-                result = subprocess.run([*command, str(png)], capture_output=True, timeout=30)
+                # Uncompressed: zlib would take most of the time, and avifenc reads it once.
+                result = subprocess.run([*command, "-define", "png:compression-level=0", str(png)], capture_output=True, timeout=30)
             except (OSError, subprocess.TimeoutExpired):
-                return None
-            return png if result.returncode == 0 else None
+                result = None
+            pngs[width, soften, sample] = png if result and result.returncode == 0 else None
+            return pngs[width, soften, sample]
 
-        def encode(png, quality):
-            out = Path(folder) / f"{png.stem}-{quality}.avif"
-            command = ["avifenc", "-q", str(quality), "-s", "3", "-d", "10", "-y", "420", "-a", "tune=ssim", str(png), str(out)]
+        def encode(width, quality, settings=SHARP_ENCODER):
+            png = picture(width)
+            out = Path(folder) / f"{width}-{quality}-{settings[1]}.avif"
+            if png is None:
+                return None
             try:
-                result = subprocess.run(command, capture_output=True, timeout=60)
+                result = subprocess.run(["avifenc", "-q", str(quality), *settings, str(png), str(out)], capture_output=True, timeout=60)
             except (OSError, subprocess.TimeoutExpired):
                 return None
             return out.read_bytes() if result.returncode == 0 and out.is_file() else None
 
-        def best_fit(png, low, high, tried=None):
-            """The highest quality from low to high whose picture fits, as (quality, bytes).
+        def measure(pairs):
+            in_parallel(picture, {width for width, _ in pairs})
+            lengths = []
+            for pair, data in zip(pairs, in_parallel(lambda pair: encode(*pair), pairs)):
+                if data is not None:
+                    encoded[pair] = data
+                lengths.append(len(data) if data else None)
+            return lengths
 
-            `tried` maps qualities already encoded to their sizes. A picture
-            grows about exponentially with quality, so once one try fits and
-            one does not, the next aims where the two say the room runs out:
-            three or four tries where halving the range would take six or seven.
-            """
-            tried = dict(tried or {})
-            target = room("avif")
-            found = None
-            while low <= high:
-                fits = max((quality for quality, length in tried.items() if length <= target), default=None)
-                over = min((quality for quality, length in tried.items() if length > target), default=None)
-                if fits is not None and over is not None and over > fits and tried[fits] > 0:
-                    growth = math.log(tried[over] / tried[fits]) / (over - fits)
-                    quality = fits + math.log(target / tried[fits]) / growth if growth > 0 else low
-                    quality = min(max(int(quality), low), high)
-                else:
-                    quality = (low + high) // 2
-                data = encode(png, quality)
-                if data is None:
-                    return found
-                tried[quality] = len(data)
-                if len(data) <= target:
-                    found, low = (quality, data), quality + 1
-                else:
-                    high = quality - 1
-            return found
+        def sketch(width):
+            picture(width)
+            lengths = in_parallel(lambda quality: encode(width, quality, SHARP_SKETCH), SHARP_SKETCH_QUALITIES)
+            return {quality: len(data) for quality, data in zip(SHARP_SKETCH_QUALITIES, lengths) if data}
 
-        if block > 1:
-            # Pixel art at its own size: whole when lossless WebP fits, which
-            # keeps every pixel exact, otherwise the best AVIF that fits.
-            native = size[0] // block
-            png = picture(native, soften=False)
-            if png is None:
-                return "none", "auto"
-            try:
-                webp = subprocess.run(
-                    ["magick", str(png), "-define", "webp:lossless=true", "-define", "webp:method=6", "webp:-"],
-                    capture_output=True, timeout=30,
-                ).stdout
-            except (OSError, subprocess.TimeoutExpired):
-                webp = b""
-            if webp and len(webp) <= room("webp"):
-                return as_css("webp", webp), "pixelated"
-            png = picture(native)
-            chosen = png and best_fit(png, 0, 95)
-            if chosen:
-                return as_css("avif", chosen[1]), "pixelated"
+        def search(widths, good, top):
+            """The best (width, quality) and its AVIF, as sharp_choice says, or None."""
+            chosen = sharp_search(sizes, room("avif"), widths, good, top, measure, sketch)
+            if chosen is None:
+                return None
+            same = [data for (w, q), data in encoded.items() if w == chosen[0] and avif_level(q) == avif_level(chosen[1])]
+            data = same[0] if same else encode(*chosen)
+            if data is None or len(data) > room("avif"):
+                return None
+            entry["picture"] = [*chosen, base64.b64encode(data).decode()]
+            REPORT["quality"] = chosen[1]
+            return data
 
-        # Every width is prepared and tried at the good quality side by side
-        # (never wider than the picture itself); the widest that holds it wins.
-        widths = list(dict.fromkeys(min(width, size[0]) for width in SHARP_WIDTHS))
-        pngs = in_parallel(picture, widths)
-        if None in pngs:
-            return "none", "auto"
-        goods = in_parallel(lambda png: encode(png, SHARP_GOOD_QUALITY), pngs)
-        for png, good in zip(pngs, goods):
-            if good is not None and len(good) <= room("avif"):
-                chosen = best_fit(png, SHARP_GOOD_QUALITY + 1, 90, {SHARP_GOOD_QUALITY: len(good)}) or (SHARP_GOOD_QUALITY, good)
-                break
-        else:
-            # Not even the smallest width holds a good quality: the best it can.
-            chosen = best_fit(pngs[-1], 0, SHARP_GOOD_QUALITY - 1, {SHARP_GOOD_QUALITY: len(goods[-1] or b"x" * (room("avif") + 1))})
-    if chosen is None:
-        return "none", "auto"
-    return as_css("avif", chosen[1]), "auto"
+        def result():
+            if entry["block"] is None:
+                # Pixel art is rare, so the widest picture is prepared for a
+                # photo while the wallpaper is checked.
+                widest = min(SHARP_WIDTHS[0], size[0])
+                entry["block"], _ = in_parallel(lambda job: job(), [
+                    lambda: pixel_block(source, *size), lambda: picture(widest, sample=False),
+                ])
+            if entry["block"] > 1:
+                # Pixel art at its own size: whole when lossless WebP fits, which
+                # keeps every pixel exact, otherwise the best AVIF that fits.
+                native = size[0] // entry["block"]
+                if entry["webp"] is None:
+                    png = picture(native, soften=False)
+                    if png is None:
+                        return "none", "auto"
+                    try:
+                        webp = subprocess.run(
+                            ["magick", str(png), "-define", "webp:lossless=true", "-define", "webp:method=6", "webp:-"],
+                            capture_output=True, timeout=30,
+                        ).stdout
+                    except (OSError, subprocess.TimeoutExpired):
+                        webp = b""
+                    entry["webp"] = base64.b64encode(webp).decode()
+                webp = base64.b64decode(entry["webp"])
+                if webp and len(webp) <= room("webp"):
+                    return as_css("webp", webp), "pixelated"
+                data = search([native], 0, 95)
+                if data:
+                    return as_css("avif", data), "pixelated"
+            # Never wider than the picture itself.
+            widths = list(dict.fromkeys(min(width, size[0]) for width in SHARP_WIDTHS))
+            data = search(widths, SHARP_GOOD_QUALITY, SHARP_TOP_QUALITY)
+            return (as_css("avif", data), "auto") if data else ("none", "auto")
+
+        css = result()
+    if key:
+        entry["sizes"] = {f"{width}x{quality}": length for (width, quality), length in sizes.items()}
+        write_sharp_cache(entry)
+    return css
 
 
 def wallpaper_css(source, budget, steps, min_blur=None):
@@ -588,9 +805,13 @@ def wallpaper_css(source, budget, steps, min_blur=None):
     blur = hyprland_blur() if min_blur is not None else None
     sigma = max(blur["sigma"] if blur else 0, min_blur or 0)
     screen = screen_width()
+    size = picture_size(source)
     for width, quality in steps:
-        # [0]: the first frame, should the file be animated.
-        command = ["magick", f"{source}[0]", "-resize", f"{width}x>", "-strip"]
+        # A JPEG at least twice as wide is decoded at a fraction of its size,
+        # no smaller than twice the width, which is far quicker and looks the
+        # same once resized. [0]: the first frame, should the file be animated.
+        hint = ["-define", f"jpeg:size={2 * width}x1"] if size and size[0] >= 2 * width else []
+        command = ["magick", *hint, f"{source}[0]", "-resize", f"{width}x>", "-strip"]
         # The blur is given in screen pixels, so scale it to this image.
         if sigma > 0:
             command += ["-blur", f"0x{sigma * width / screen:.3g}"]
@@ -807,19 +1028,27 @@ def build_css(settings):
     wants_header = "var(--omarchy-header-wallpaper)" in css
     wants_background = "var(--omarchy-wallpaper)" in css
     variables["header-wallpaper"] = variables["wallpaper"] = "none"
-    if wants_header:
+    if wants_background and "backdrop" in keep:
+        # Sized as if pixelated, the longer of the two renderings.
+        variables["wallpaper-rendering"] = "pixelated"
+        free = CSS_LIMIT - len(with_variables())
+        variables["wallpaper"], variables["wallpaper-rendering"] = sharp_wallpaper_css(desktop_wallpaper(), free)
+    elif wants_header or wants_background:
         free = CSS_LIMIT - len(with_variables())
         share = free // 2 if wants_background else free
-        variables["header-wallpaper"] = wallpaper_css(first_wallpaper(), share, HEADER_STEPS, settings["min_blur"])
-    if wants_background:
-        free = CSS_LIMIT - len(with_variables())
-        if "backdrop" in keep:
-            # Sized as if pixelated, the longer of the two renderings.
-            variables["wallpaper-rendering"] = "pixelated"
+        header_source = first_wallpaper() if wants_header else None
+        background_source = random_wallpaper() if wants_background else None
+        # The conversation's picture gets what the header's leaves. The two are
+        # encoded side by side: the conversation's first step in the least the
+        # header can leave, and should that not fit, its steps again in what
+        # the header did leave.
+        variables["header-wallpaper"], variables["wallpaper"] = in_parallel(lambda job: job(), [
+            lambda: wallpaper_css(header_source, share, HEADER_STEPS, settings["min_blur"]),
+            lambda: wallpaper_css(background_source, free - share, BACKGROUND_STEPS[:1], settings["min_blur"]),
+        ])
+        if wants_background and variables["wallpaper"] == "none":
             free = CSS_LIMIT - len(with_variables())
-            variables["wallpaper"], variables["wallpaper-rendering"] = sharp_wallpaper_css(desktop_wallpaper(), free)
-        else:
-            variables["wallpaper"] = wallpaper_css(random_wallpaper(), free, BACKGROUND_STEPS, settings["min_blur"])
+            variables["wallpaper"] = wallpaper_css(background_source, free, BACKGROUND_STEPS, settings["min_blur"])
     css = with_variables()
     REPORT["chars"] = len(css)
     REPORT["picture"] = picture_report(variables["wallpaper"])

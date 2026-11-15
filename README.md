@@ -75,13 +75,15 @@ bright one is dimmed just enough to read on. Your messages are outlined rather
 than filled, and the composer is a dark card.
 
 T3 Code caps a theme's CSS at 20,000 characters and accepts pictures only
-inside it, so the wallpaper is squeezed into what is left, about 10 KB. With
-`avifenc` installed (from `libavif`) it is a 10-bit AVIF of up to 1920 pixels
-at the best quality that fits. The middle, which sits behind the glass anyway,
-is softened before encoding, which frees about a third of the bytes for the
-sharp sides. Pixel art is found by its blocks and sent at its own size, then
-scaled up with hard edges: whole as lossless WebP when that fits, otherwise as
-AVIF. Without `avifenc`, a smaller ImageMagick picture is used.
+inside it, so the wallpaper is squeezed into what is left, about 10 KB. With `avifenc` installed (from `libavif`) it is a 10-bit AVIF of up
+to 1920 pixels at the best quality that fits. The middle, which sits behind
+the glass anyway, is softened before encoding, which frees about a third of
+the bytes for the sharp sides. Finding the best quality takes a few slow
+encodes, so what they measured is kept for the last few wallpapers, and
+publishing one of them again (after a font, tint or config change) takes a
+fraction of a second. Pixel art is found by its blocks and sent at its own
+size, then scaled up with hard edges: whole as lossless WebP when that fits,
+otherwise as AVIF. Without `avifenc`, a smaller ImageMagick picture is used.
 
 Pick a style in `~/.config/omarchy-t3code-plus/config.toml`. The plugin
 applies the file as soon as it is saved:
@@ -122,8 +124,10 @@ omarchy plugin remove io.github.jagrat7.omarchy-t3code-plus
 ```
 
 After removing it, choose **Omarchy** in T3 Code again. The settings stay in
-`~/.config/omarchy-t3code-plus/` and the last published theme in
-`~/.t3/userdata/themes/omarchy-plus.json`; delete them if you like.
+`~/.config/omarchy-t3code-plus/`, the last published theme in
+`~/.t3/userdata/themes/omarchy-plus.json`, and the last status and the
+backdrop's cache of recent wallpapers in `~/.local/state/omarchy-t3code-plus/`;
+delete them if you like.
 
 ## Without the plugin
 
