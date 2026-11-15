@@ -84,10 +84,13 @@ SHARP_SKETCH_RATIO = 0.85
 SHARP_WIDTH_POWER = 1.6
 SHARP_LEVEL_GROWTH = 0.065
 # What the encodes of the last few wallpapers measured, and the picture chosen,
-# so publishing one again (after a font, tint or config change) encodes little
-# or nothing.
+# so publishing one again (after a font, tint, config or wallpaper change)
+# encodes little or nothing. It holds a few themes' worth. After a full-alt
+# publish the theme's other wallpapers are encoded in the background, at low
+# priority, so the next one dealt is ready.
 SHARP_CACHE = STATUS.parent / "sharp-cache.json"
-SHARP_CACHE_ENTRIES = 8
+SHARP_CACHE_ENTRIES = 32
+WARM_LOCK = LOCK.with_name("t3code-omarchy-plus-warm.lock")
 # Pixel art drawn at a whole-number scale (each art pixel a block of screen
 # pixels) is sent at its own size and scaled up by T3 Code with hard edges,
 # which keeps it crisp in a fraction of the room. Blocks up to this size are
@@ -1098,7 +1101,37 @@ def publish(settings):
 
     write_json(TARGET, theme)
     write_status(settings, True)
+    if "backdrop" in STYLES[settings["style"]] and uncached_wallpapers():
+        try:
+            subprocess.Popen(
+                ["nice", "-n", "19", sys.executable, __file__, "--warm"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except OSError:
+            pass
     return True
+
+
+def uncached_wallpapers():
+    """The theme's wallpapers that full-alt has not encoded yet."""
+    if not shutil.which("avifenc"):
+        return []
+    cached = {entry.get("key") for entry in read_sharp_cache()}
+    return [path for path in (p.resolve() for p in theme_wallpapers()) if sharp_cache_key(path) not in cached]
+
+
+def warm(settings):
+    """Encode full-alt's picture of each of the theme's wallpapers not cached yet, one at a time."""
+    try:
+        lock = open(WARM_LOCK, "w")
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return
+    with lock:
+        settings = {**settings, "style": "full-alt"}
+        for path in uncached_wallpapers():
+            build_css(settings, inside=path)
 
 
 def main():
@@ -1115,7 +1148,11 @@ def main():
         type=tint_value,
         help='set and remember the full-alt tint: "auto" (from the wallpaper\'s brightness) or 0 to 1',
     )
+    parser.add_argument("--warm", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.warm:
+        warm(load_settings())
+        return 0
     # A first run writes the config with its defaults, so there is a file to edit.
     try:
         if args.style or not CONFIG.exists():
