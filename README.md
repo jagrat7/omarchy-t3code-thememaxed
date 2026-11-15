@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/icon.png" width="84" alt=""></p>
+
 <h1 align="center">T3 Code Thememaxed</h1>
 
 <p align="center">
@@ -12,7 +14,7 @@ corners and borders, the shell's menus and popups, and the theme's wallpaper
 behind the app. It follows every theme switch, font change and new wallpaper
 on its own.
 
-![T3 Code with Thememaxed in the backdrop style, on the Retro 82 theme](docs/screenshots/backdrop.webp)
+![T3 Code with Thememaxed in the backdrop style, on the Last Call theme](docs/screenshots/backdrop.webp)
 
 Omarchy already publishes a colours-only T3 Code theme called **Omarchy**.
 This plugin leaves that one alone and publishes a second theme, **Thememaxed**,
@@ -28,12 +30,20 @@ Then in T3 Code choose **Settings > Appearance > Thememaxed**. That's all: the
 plugin runs in the Omarchy shell and republishes the theme whenever the
 desktop changes.
 
-The plugin also puts its icon, T3 dripping paint, in the bar. Click it to pick the
-style and the backdrop's tint, publish again or open the config. Middle-click
-publishes again. To move or remove the icon, use the bar's widget settings like any
-other widget. Updated from a version without the icon? Run
+<img src="docs/screenshots/panel.webp" width="300" align="right" alt="The bar panel: a preview of each style, Publish again and Edit config">
+
+The plugin also puts its icon, T3 dripping paint, in the bar. Click it for a
+panel with a small preview of each style, drawn in your theme's colours with
+your wallpaper where that style puts it. Click one to switch. Under
+`backdrop` a slider sets the chat column's tint. The panel can also publish
+again or open the config, and a middle click on the icon publishes again.
+
+To move or remove the icon, use the bar's widget settings like any other
+widget. Updated from a version without the icon? Run
 `omarchy plugin enable io.github.jagrat7.omarchy-t3code-plus right` and
 restart the shell with `omarchy-restart-shell`.
+
+<br clear="right">
 
 ## Styles
 
@@ -57,13 +67,19 @@ The wallpaper comes in three strengths, plus a sharp alternative to `full`:
   </tr>
 </table>
 
-All four on the Retro 82 theme.
+All four on a new thread, on the Last Call theme.
 
 The header always shows the theme's first wallpaper, the one Omarchy starts
 the theme on, so it stays the same while you cycle the desktop's. The
 conversation gets a random one of the theme's wallpapers each time the theme
 is republished. Every picture is blurred and tinted enough to keep text
 readable, more if the theme's own blur or scrim is stronger.
+
+A new thread has only the heading and the composer, so there `full` and
+`too-much` tint the wallpaper half as much, darker in the middle, and
+`backdrop` drops its frosted column to show the whole scene. The row under
+the composer (machine, checkout, branch) is plain text over the wallpaper in
+every style.
 
 `backdrop` is the look of Claude Code's desktop themes: the wallpaper on your
 desktop, not blurred, as the scene behind the conversation, with the chat
@@ -113,7 +129,9 @@ Or from the bar's panel, or from a terminal, which also deals a new random wallp
   popovers use the shell's popup border; tooltips its tooltip border.
 - **Selected rows.** The current thread and the highlighted menu item look
   like the selected row in the Omarchy menu.
-- **Wallpaper.** As the style says.
+- **Wallpaper.** As the style says, including on a new thread.
+- **Composer row.** The machine, checkout and branch under the composer are
+  plain text, without a bar behind them.
 
 ## Update and remove
 
@@ -158,7 +176,9 @@ Tested with Omarchy 4.5 and T3 Code 0.1.10 (nightly, November 2026).
 
 ## How it works
 
-`Service.qml` is a `service` plugin, so one copy runs in the shell. It runs
+`Service.qml` is a `service` plugin, so one copy runs in the shell.
+`BarWidget.qml` is the bar icon and `Panel.qml` its panel;
+`StylePreview.qml` draws the style previews and `DripMark.qml` the icon. It runs
 [`bin/t3code-omarchy-plus`](bin/t3code-omarchy-plus) when it starts and
 again when `omarchy theme set` writes `theme.generation`, when `omarchy font
 set` rewrites `fonts.conf`, when the wallpaper link in
@@ -182,8 +202,8 @@ The publisher:
 ### Customising
 
 Every block of `themed/t3code.css.tpl` says what it does. Blocks between
-`/* @part background */` or `/* @part sidebar */` and `/* @end */` are kept
-only by the styles that use them. A plugin update replaces the template, so
+`/* @part <name> (<styles>) */` and `/* @end */` (header, background,
+sidebar, backdrop) are kept only by the styles listed in them. A plugin update replaces the template, so
 keep your changes in a fork, or clone the plugin into place and edit there:
 saving republishes.
 
@@ -196,6 +216,10 @@ saving republishes.
   drawn in shadow DOM with a fixed scheme that theme CSS cannot reach.
 - The CSS uses T3 Code's documented `data-*` selectors. The square-corner
   rules also match Tailwind class names, which a T3 Code update may rename.
+- T3 Code marks no new-thread state. The publisher spots it by the composer
+  filling the conversation (its `inset-0` class) and lets the wallpaper
+  through the empty timeline's placeholder (`data-timeline-loading`). If an
+  update renames either, a new thread looks like any other thread.
 
 ## Development
 
