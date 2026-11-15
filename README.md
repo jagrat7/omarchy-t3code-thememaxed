@@ -28,6 +28,14 @@ Then in T3 Code choose **Settings > Appearance > Omarchy+**. That's all: the
 plugin runs in the Omarchy shell and republishes the theme whenever the
 desktop changes.
 
+The plugin also puts a palette icon (󰏘) in the bar. Click it to pick the
+style and the backdrop's tint, see the theme, wallpaper and CSS size that were
+last published, publish again or open the config. Middle-click publishes
+again. To move or remove the icon, use the bar's widget settings like any
+other widget. Updated from a version without the icon? Run
+`omarchy plugin enable io.github.jagrat7.omarchy-t3code-plus right` and
+restart the shell with `omarchy-restart-shell`.
+
 ## Styles
 
 The wallpaper comes in three strengths, plus a sharp alternative to `full`:
@@ -85,10 +93,11 @@ min_tint = 0.75        # least opacity of the theme background over the picture
 backdrop_tint = "auto" # backdrop only: tint, 0 to 1, or "auto" from the wallpaper
 ```
 
-Or from a terminal, which also deals a new random wallpaper:
+Or from the bar's panel, or from a terminal, which also deals a new random wallpaper:
 
 ```bash
 ~/.config/omarchy/plugins/io.github.jagrat7.omarchy-t3code-plus/bin/t3code-omarchy-plus --style too-much
+~/.config/omarchy/plugins/io.github.jagrat7.omarchy-t3code-plus/bin/t3code-omarchy-plus --tint 0.4   # or auto
 ```
 
 ## What changes

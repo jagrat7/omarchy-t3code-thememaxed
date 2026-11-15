@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -46,6 +47,8 @@ STATE_DIR = T3CODE_HOME / "userdata"
 # A theme of its own, beside Omarchy's "omarchy", which Omarchy keeps writing.
 TARGET = STATE_DIR / "themes/omarchy-plus.json"
 THEME_NAME = "Omarchy+"
+# What the last run published, for the bar widget.
+STATUS = STATE_HOME / "omarchy-t3code-plus/status.json"
 LOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "t3code-omarchy-plus.lock"
 # T3 Code rejects a theme whose CSS is longer than this.
 CSS_LIMIT = 20000
@@ -130,7 +133,12 @@ style = "{style}"
 """
 
 
+# Filled in while building, then written to STATUS.
+REPORT = {}
+
+
 def warn(message):
+    REPORT["warning"] = message
     print(f"T3 Code theme: {message}", file=sys.stderr)
 
 
@@ -164,21 +172,39 @@ def load_settings():
     }
 
 
-def save_style(style):
-    """Record the style in CONFIG, keeping anything else the file says."""
+def save_setting(name, value):
+    """Record `name = value` (a TOML value) in CONFIG, keeping anything else the file says."""
     try:
         text = CONFIG.read_text()
     except OSError:
-        text = None
-    line = f'style = "{style}"'
-    if text is None:
-        text = CONFIG_TEMPLATE.format(style=style)
-    elif re.search(r"(?m)^\s*style\s*=.*$", text):
-        text = re.sub(r"(?m)^\s*style\s*=.*$", line, text, count=1)
-    else:
+        text = CONFIG_TEMPLATE.format(style=DEFAULT_STYLE)
+    line = f"{name} = {value}"
+    setting = re.compile(rf"(?m)^\s*{re.escape(name)}\s*=.*$")
+    if setting.search(text):
+        text = setting.sub(line, text, count=1)
+    elif name == "style":
         text = f"{line}\n{text}"
+    else:
+        text = text.rstrip("\n") + f"\n{line}\n"
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
     CONFIG.write_text(text)
+
+
+def save_style(style):
+    save_setting("style", f'"{style}"')
+
+
+def tint_value(text):
+    """The --tint argument: "auto" or a number from 0 to 1."""
+    if text == "auto":
+        return text
+    try:
+        value = float(text)
+    except ValueError:
+        value = -1
+    if not 0 <= value <= 1:
+        raise argparse.ArgumentTypeError('give "auto" or a number from 0 to 1')
+    return f"{value:g}"
 
 
 def command_output(*command):
@@ -679,6 +705,47 @@ def keep_blocks(css, keep):
     return block.sub(lambda match: match.group(2) if match.group(1) in keep else "", css)
 
 
+def picture_report(image):
+    """Format, size in bytes and pixels of a data: CSS image, or None."""
+    match = re.search(r"data:image/(\w+);base64,([A-Za-z0-9+/=]+)", image or "")
+    if not match:
+        return None
+    data = base64.b64decode(match.group(2))
+    try:
+        size = subprocess.run(
+            ["magick", "identify", "-format", "%w %h", "-"], input=data, capture_output=True, timeout=10
+        ).stdout.split()
+    except (OSError, subprocess.TimeoutExpired):
+        size = []
+    width, height = (int(size[0]), int(size[1])) if len(size) == 2 else (None, None)
+    return {"format": match.group(1), "bytes": len(data), "width": width, "height": height}
+
+
+def write_status(settings, published):
+    """Tell the bar widget what was published, written atomically."""
+    try:
+        theme = (CURRENT_DIR / "theme.name").read_text().strip()
+    except OSError:
+        theme = ""
+    status = {
+        "published": published,
+        "time": int(time.time()),
+        "style": settings["style"],
+        "backdropTint": settings.get("backdrop_tint", BACKDROP_TINT),
+        "theme": theme,
+        "limit": CSS_LIMIT,
+        **REPORT,
+    }
+    try:
+        STATUS.parent.mkdir(parents=True, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(prefix=f"{STATUS.name}.", dir=STATUS.parent)
+        with os.fdopen(handle, "w") as file:
+            json.dump(status, file, indent=2)
+        os.replace(temporary, STATUS)
+    except OSError:
+        pass
+
+
 def build_css(settings):
     """The CSS with the theme's colours and the Omarchy values in, or None when it cannot be used."""
     try:
@@ -710,6 +777,7 @@ def build_css(settings):
         alpha = backdrop_alpha(settings.get("backdrop_tint", BACKDROP_TINT), desktop_wallpaper(), background)
         # The chat column takes the full tint; the scene at its sides a third.
         variables["scene-tint"] = css_color(background, alpha) or "transparent"
+        REPORT["tint"] = round(alpha, 3)
         variables["scene-edge"] = css_color(background, alpha / 3) or "transparent"
 
     def with_variables():
@@ -738,6 +806,9 @@ def build_css(settings):
         else:
             variables["wallpaper"] = wallpaper_css(random_wallpaper(), free, BACKGROUND_STEPS, settings["min_blur"])
     css = with_variables()
+    REPORT["chars"] = len(css)
+    REPORT["picture"] = picture_report(variables["wallpaper"])
+    REPORT["rendering"] = variables.get("wallpaper-rendering", "auto")
     if len(css) > CSS_LIMIT:
         warn(f"the CSS is {len(css)} characters, over T3 Code's {CSS_LIMIT} limit; publishing the palette without it.")
         return None
@@ -767,6 +838,7 @@ def publish(settings):
         return False
     theme = build_theme(settings)
     if theme is None:
+        write_status(settings, False)
         return True
 
     # T3 Code watches this file, so the write has to be atomic.
@@ -780,6 +852,7 @@ def publish(settings):
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+    write_status(settings, True)
     return True
 
 
@@ -792,15 +865,22 @@ def main():
         "conversation background), too-much (the sidebar as well) or backdrop "
         "(the sharp desktop wallpaper behind a frosted chat column)",
     )
+    parser.add_argument(
+        "--tint",
+        type=tint_value,
+        help='set and remember the backdrop tint: "auto" (from the wallpaper\'s brightness) or 0 to 1',
+    )
     args = parser.parse_args()
     # A first run writes the config with its defaults, so there is a file to edit.
-    if args.style or not CONFIG.exists():
-        try:
+    try:
+        if args.style or not CONFIG.exists():
             save_style(args.style or DEFAULT_STYLE)
-        except OSError as error:
-            warn(f"could not save the config: {error}")
-            if args.style:
-                return 1
+        if args.tint:
+            save_setting("backdrop_tint", '"auto"' if args.tint == "auto" else args.tint)
+    except OSError as error:
+        warn(f"could not save the config: {error}")
+        if args.style or args.tint:
+            return 1
 
     # The plugin and a hook can fire together on a theme switch; take turns.
     try:

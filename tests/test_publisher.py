@@ -75,6 +75,22 @@ class Blocks(unittest.TestCase):
             self.assertEqual(publisher.pixel_block(art, 150, 100), 5)
             self.assertEqual(publisher.pixel_block(photo, 150, 100), 1)
 
+    def test_settings_are_saved_in_place(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(publisher, "CONFIG", Path(folder) / "config.toml"):
+            publisher.save_style("backdrop")
+            publisher.save_setting("backdrop_tint", "0.3")
+            publisher.save_setting("backdrop_tint", '"auto"')
+            lines = [line for line in publisher.CONFIG.read_text().splitlines() if line and not line.startswith("#")]
+        self.assertEqual(lines, ['style = "backdrop"', 'backdrop_tint = "auto"'])
+
+    def test_tint_takes_auto_or_a_fraction(self):
+        self.assertEqual(publisher.tint_value("auto"), "auto")
+        self.assertEqual(publisher.tint_value("0.35"), "0.35")
+        for wrong in ("2", "-0.1", "dark"):
+            with self.assertRaises(publisher.argparse.ArgumentTypeError):
+                publisher.tint_value(wrong)
+
     def test_backdrop_tint_follows_the_wallpaper(self):
         with mock.patch.object(publisher, "picture_luminance", return_value=0.1):
             dark_picture = publisher.backdrop_alpha("auto", Path("/w.jpg"), "#0b1b2b")
