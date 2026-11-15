@@ -879,8 +879,6 @@ def omarchy_variables(settings):
         "row-fill": row_fill or "transparent",
         "row-text": menu.get("selected-text", accent),
         "row-border": css_gradient(row, row_angle),
-        "row-edge-top": row[0],
-        "row-edge-bottom": row[-1],
         "row-border-top": f"{top:g}px",
         "row-border-right": f"{right:g}px",
         "row-border-bottom": f"{bottom:g}px",

@@ -150,17 +150,27 @@
 }
 
 /* The row you are on is drawn like the selected row of the Omarchy menu. The
-   frame is painted as background strips so the row keeps its size. */
+   frame is an overlay cut to a border, so it follows the corners and the row
+   keeps its size. */
 [data-thread-item] [aria-current]:not([aria-current="false"]),
 [data-slot="menu-popup"] [data-highlighted] {
-  background:
-    var(--omarchy-row-border) left / var(--omarchy-row-border-left) 100% no-repeat,
-    var(--omarchy-row-border) right / var(--omarchy-row-border-right) 100% no-repeat,
-    linear-gradient(var(--omarchy-row-edge-top), var(--omarchy-row-edge-top)) top / 100% var(--omarchy-row-border-top) no-repeat,
-    linear-gradient(var(--omarchy-row-edge-bottom), var(--omarchy-row-edge-bottom)) bottom / 100% var(--omarchy-row-border-bottom) no-repeat,
-    linear-gradient(var(--omarchy-row-fill), var(--omarchy-row-fill)) !important;
+  position: relative;
+  background: linear-gradient(var(--omarchy-row-fill), var(--omarchy-row-fill)) !important;
   color: var(--omarchy-row-text) !important;
   border-radius: var(--omarchy-radius) !important;
+}
+
+[data-thread-item] [aria-current]:not([aria-current="false"])::after,
+[data-slot="menu-popup"] [data-highlighted]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: solid transparent;
+  border-width: var(--omarchy-row-border-top) var(--omarchy-row-border-right) var(--omarchy-row-border-bottom) var(--omarchy-row-border-left);
+  border-radius: inherit;
+  background: var(--omarchy-row-border) border-box;
+  mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
 }
 
 [data-thread-item] [aria-current]:not([aria-current="false"]) {
