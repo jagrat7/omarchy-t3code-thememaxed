@@ -77,7 +77,8 @@ readable, more if the theme's own blur or scrim is stronger.
 
 A new thread has only the heading and the composer, so there `full` and
 `too-much` tint the wallpaper half as much, darker in the middle, and
-`backdrop` shows the wallpaper whole, with no frosted column or tint. The row under
+`backdrop` drops its frosted column to show the whole wallpaper, with a
+soft tint behind the heading and composer. The row under
 the composer (machine, checkout, branch) is plain text over the wallpaper in
 every style.
 
