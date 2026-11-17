@@ -49,8 +49,9 @@ Steps:
 
 ## Gotchas
 
-- On full-alt, a wallpaper that hasn't been encoded yet shows the loading
-  skeleton first. Wait for `skeleton: false` before you take its state.
+- On full-alt, T3 Code downloads the new background file after the theme
+  changes. Wait a second, then for `--theme-background-image`, before you
+  take its state (see [Full-alt background file](./full-alt-background.md)).
 - A theme with only one or two wallpapers runs out of choices, so a repeat
   or the desktop's own wallpaper is correct there.
 - The sandbox reads the user's real theme, so the set of wallpapers is

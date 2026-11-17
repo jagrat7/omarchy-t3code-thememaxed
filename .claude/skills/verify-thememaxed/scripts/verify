@@ -4,7 +4,7 @@
 #   verify up                 sandbox homes, first publish, launch T3 Code hidden, open a conversation
 #   verify doctor             read-only: is the sandbox instance worth driving?
 #   verify publish [args]     run bin/t3code-omarchy-plus in the sandbox (same args the bar panel sends)
-#   verify publish-bg [args]  the same, in the background (to watch the full-alt skeleton while it encodes)
+#   verify publish-bg [args]  the same, in the background (to watch the app while a publish runs)
 #   verify state [name]       what the app shows now, as JSON (saved to evidence when named)
 #   verify shot <name>        screenshot of the app into the evidence folder
 #   verify thread <message>   start a thread with that message (via T3 Code's own t3 CLI) and open it
@@ -20,7 +20,11 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(git -C "$HERE" rev-parse --show-toplevel)
 RUN=${T3V_RUN:-$ROOT/.verify/run}
 PORT=${T3V_PORT:-9339}
-APP=${T3V_APP:-$HOME/AppImages/t3_code_nightly.appimage}
+NEW_APP=${T3V_APP:-$HOME/AppImages/t3_code_nightly.appimage}
+# A running sandbox keeps the AppImage it was launched with, so `down` can tell
+# its mount process apart even when T3V_APP is not set again.
+APP=$NEW_APP
+[[ -f $RUN/app-path ]] && APP=$(cat "$RUN/app-path")
 WORKSPACE=special:t3verify
 # T3V_PUBLISHER=<other checkout>/bin/t3code-omarchy-plus publishes that version (and its template) instead, for before/after shots.
 PUBLISHER=${T3V_PUBLISHER:-$ROOT/bin/t3code-omarchy-plus}
@@ -38,7 +42,7 @@ log() { [[ -f $RUN/run-id ]] && printf '[%s] %s\n' "$(date +%T)" "$*" >> "$(evid
 cdp() { node "$HERE/cdp.mjs" "$@"; }
 
 # Every process the sandbox starts carries T3V_SANDBOX=$RUN in its environment,
-# the T3 Code launch and the publisher's own background --warm encoder alike.
+# the T3 Code launch and every publisher run alike.
 sandbox_env() {
   env T3V_SANDBOX="$RUN" XDG_CONFIG_HOME="$RUN/config" XDG_STATE_HOME="$RUN/state" \
     XDG_CACHE_HOME="$RUN/cache" XDG_DATA_HOME="$RUN/data" T3CODE_HOME="$RUN/t3" "$@"
@@ -69,7 +73,8 @@ port_owner() { ss -ltnpH "sport = :$PORT" 2>/dev/null | grep -o 'pid=[0-9]*' | h
 up() {
   [[ -n $(sandbox_pids)$(app_pid) ]] && die "a sandbox is already running at $RUN; run: verify down"
   [[ -n $(port_owner) ]] && die "port $PORT is taken by pid $(port_owner), not this sandbox; set T3V_PORT"
-  [[ -x $APP ]] || die "T3 Code AppImage not found at $APP; set T3V_APP"
+  APP=$(readlink -f "$NEW_APP")
+  [[ -x $APP ]] || die "T3 Code AppImage not found at $NEW_APP; set T3V_APP"
   command -v hyprctl >/dev/null || die "needs Hyprland: the app launches into the hidden $WORKSPACE workspace"
   [[ -d $REAL_STATE/omarchy/current/theme ]] || die "no Omarchy theme at $REAL_STATE/omarchy/current"
 
@@ -77,6 +82,7 @@ up() {
   mkdir -p "$RUN"/{config,state/omarchy,cache,data,runtime,project,t3/userdata/themes}
   git -C "$RUN/project" init -q
   date +%Y%m%d-%H%M%S > "$RUN/run-id"
+  printf '%s' "$APP" > "$RUN/app-path"
   # The real Omarchy theme, read only: the publisher reads it, never writes it.
   ln -s "$REAL_STATE/omarchy/current" "$RUN/state/omarchy/current"
   if [[ -d $REAL_CONFIG/omarchy/backgrounds ]]; then
@@ -149,21 +155,34 @@ run_publisher() {
 
 state() {
   local json
-  json=$(cdp eval '(() => {
+  json=$(cdp eval '(async () => {
     const sheet = document.adoptedStyleSheets.map(s => [...s.cssRules].map(r => r.cssText).join("\n")).find(t => t.includes("--omarchy-")) || "";
-    const picture = (sheet.match(/--omarchy-wallpaper: *url\("data:image\/(\w+);base64,([^"]{0,64})/) || []);
     const c = document.querySelector("[data-workspace-area=conversation]");
     const cs = c && getComputedStyle(c);
-    let hash = 0;
+    // The picture inside T3 Code: a data: URI in the theme CSS (full, max), or for
+    // full-alt the background image file, which T3 Code loads into a blob: URL.
     const data = (sheet.match(/--omarchy-wallpaper: *url\("([^"]*)"/) || [, ""])[1];
-    for (let i = 0; i < data.length; i++) hash = (hash * 31 + data.charCodeAt(i)) | 0;
+    const blobUrl = (document.documentElement.style.getPropertyValue("--theme-background-image").match(/url\("?([^")]+)/) || [])[1] || null;
+    const url = data || blobUrl;
+    let picture = null;
+    if (url) {
+      // T3 Code does not allow fetch() of a data: URI, so it is decoded here.
+      const inline = url.match(/^data:([^;,]+);base64,(.*)$/);
+      const blob = inline
+        ? new Blob([Uint8Array.from(atob(inline[2]), ch => ch.charCodeAt(0))], { type: inline[1] })
+        : await (await fetch(url)).blob();
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let hash = 2166136261;
+      for (let i = 0; i < bytes.length; i++) hash = Math.imul(hash ^ bytes[i], 16777619);
+      const bitmap = await createImageBitmap(blob);
+      picture = { from: data ? "css" : "file", type: blob.type, bytes: bytes.length, size: [bitmap.width, bitmap.height], hash: (hash >>> 0).toString(16) };
+    }
     return {
       themeApplied: sheet.length > 0,
       cssChars: sheet.length,
-      wallpaperFormat: picture[1] || null,
-      wallpaperChars: data.length,
-      wallpaperHash: data ? (hash >>> 0).toString(16) : null,
-      skeleton: c ? getComputedStyle(c, "::after").animationName === "omarchy-skeleton" : null,
+      wallpaper: picture,
+      wallpaperHash: picture ? picture.hash : null,
+      backgroundUrl: blobUrl,
       glass: c ? getComputedStyle(c, "::before").backdropFilter : null,
       // Viewport x ranges of the first chat column and of the frosted glass behind it.
       laneSpan: (() => { const l = document.querySelector(".chat-content-lane"); if (!l) return null; const r = l.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; })(),
@@ -171,7 +190,7 @@ state() {
       sceneTint: (sheet.match(/--omarchy-scene-tint: *([^;]+)/) || [])[1] || null,
       conversationBackground: cs ? cs.backgroundImage.slice(0, 160) : null,
       // True only for the theme pictures, not the built-in T3 Code textures.
-      conversationHasPicture: cs && data ? cs.backgroundImage.includes(data.slice(0, 200)) : false,
+      conversationHasPicture: cs && url ? cs.backgroundImage.includes(url.slice(0, 200)) : false,
       sidebarHasPicture: (() => {
         const s = document.querySelector("[data-slot=sidebar-inner]");
         const header = (sheet.match(/--omarchy-header-wallpaper: *url\("([^"]*)"/) || [, ""])[1];
@@ -254,7 +273,7 @@ down() {
     left=$(wait_gone 120 "$main")
     [[ -n $left ]] && kill -9 $left 2>/dev/null
   fi
-  # 2. Anything of ours that outlived it, such as the publisher's --warm encoder.
+  # 2. Anything of ours that outlived it, such as a publisher still running.
   if [[ -n $rest ]]; then
     left=$(wait_gone 20 $rest)
     if [[ -n $left ]]; then

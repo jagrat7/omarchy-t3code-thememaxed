@@ -57,9 +57,8 @@ Steps:
   - Choose the Full alt tile: run `$V publish --style full-alt`, then
     `$V state style-full-alt` and `$V shot style-full-alt`.
   - Expect `glass: "blur(24px)"`, `conversationHasPicture: true`,
-    `skeleton: false` and `sidebarHasPicture: false`.
-  - In `status`, `picture.width` should be at least 960 when `avifenc` is
-    installed.
+    `sidebarHasPicture: false`, and `wallpaper.from: "file"` at the
+    wallpaper's own size.
 - **Full alt glass follows the text.**
   - Open a thread with messages: run
     `$V thread "A message long enough to wrap the chat column across several lines so both edges show."`.
@@ -87,9 +86,9 @@ Steps:
 - The header picture is drawn with a band of the sidebar background over it,
   so `sidebarHasPicture` is true for minimal, full and max alike. Use
   `sidebarBackgroundSize` to tell max apart.
-- The first switch to full-alt on a wallpaper shows the loading skeleton
-  for a few seconds. Wait for `skeleton: false` before you take its state
-  (see [Full-alt loading skeleton](./full-alt-loading.md)).
+- Full-alt's picture is a file T3 Code loads after the theme changes. Wait
+  for `--theme-background-image` before you take its state (see
+  [Full-alt background file](./full-alt-background.md)).
 - T3 Code only shifts the column sometimes. It depends on the thread
   details panel and the window width: at the sandbox's full 2536px width,
   one run had the column centered and another had it 138px left. Always

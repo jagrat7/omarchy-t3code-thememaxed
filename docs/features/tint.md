@@ -26,8 +26,8 @@ wallpaper stays inside T3 Code.
 Preconditions:
 
 - `$V doctor` shows only `ok` lines.
-- The style is full-alt and its picture is done:
-  `$V publish --style full-alt`, then `$V state` shows `skeleton: false`.
+- The style is full-alt and its picture has loaded: `$V publish --style full-alt`,
+  then `$V state` shows a `backgroundUrl`.
 
 Steps:
 
@@ -51,6 +51,10 @@ Steps:
   tint change.
 
 ## Gotchas
+
+- On full-alt, also compare `backgroundUrl` before and after. A new `blob:`
+  URL means T3 Code downloaded the picture again, and it blinks while that
+  happens.
 
 - Before this was fixed, every tint change dealt a new random wallpaper. A
   different `wallpaperHash` after `--tint` is that regression.
