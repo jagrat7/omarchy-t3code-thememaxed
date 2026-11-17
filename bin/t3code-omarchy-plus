@@ -370,7 +370,8 @@ def hex_luminance(value):
 
 def picture_luminance(source):
     try:
-        value = command_output("magick", f"{source}[0]", "-sample", "128x", "-colorspace", "Gray", "-format", "%[fx:mean]", "info:")
+        # A JPEG is decoded at a fraction of its size, which is all a mean needs.
+        value = command_output("magick", "-define", "jpeg:size=256x256", f"{source}[0]", "-sample", "128x", "-colorspace", "Gray", "-format", "%[fx:mean]", "info:")
         return float(value)
     except ValueError:
         return None
@@ -562,21 +563,12 @@ def picture_report(image):
 
 
 def write_json(path, data, indent=2):
-    """Write `data` to `path` in one step, as the apps watching it need."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix=f"{path.name}.", dir=path.parent)
-    try:
-        with os.fdopen(handle, "w") as file:
-            json.dump(data, file, indent=indent)
-            file.write("\n")
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    write_bytes(path, (json.dumps(data, indent=indent) + "\n").encode())
 
 
 def write_bytes(path, data):
     """Write `data` to `path` in one step, so a watcher never reads half a file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(handle, "wb") as file:
@@ -624,7 +616,7 @@ def publish_background(source):
         return
     kind, data = picture
     try:
-        same = not keep.is_symlink() and keep.read_bytes() == data
+        same = not keep.is_symlink() and keep.stat().st_size == len(data) and keep.read_bytes() == data
     except OSError:
         same = False
     if not same:
@@ -650,10 +642,10 @@ def write_status(settings, published):
         pass
 
 
-def build_css(settings, inside=None):
+def build_css(settings, inside):
     """The CSS with the theme's colours and the Omarchy values in, or None when it cannot be used.
 
-    `inside` is the wallpaper for inside T3 Code; a random one when None.
+    `inside` is the wallpaper for inside T3 Code, or None.
     """
     try:
         css = render_template(TEMPLATE.read_text(), theme_values())
@@ -678,9 +670,7 @@ def build_css(settings, inside=None):
         warn(f"the theme has no value for {', '.join(unresolved)}; publishing the palette without CSS.")
         return None
 
-    if keep & {"background", "backdrop"}:
-        inside = inside or random_wallpaper()
-    else:
+    if not keep & {"background", "backdrop"}:
         inside = None
     if inside:
         REPORT["wallpaper"] = str(inside)
@@ -702,7 +692,6 @@ def build_css(settings, inside=None):
     wants_header = "var(--omarchy-header-wallpaper)" in css
     wants_background = "var(--omarchy-wallpaper)" in css
     variables["header-wallpaper"] = variables["wallpaper"] = "none"
-    REPORT["picture"] = None
     if wants_header or wants_background:
         free = CSS_LIMIT - len(with_variables())
         share = free // 2 if wants_background else free
@@ -717,14 +706,14 @@ def build_css(settings, inside=None):
             variables["wallpaper"] = wallpaper_css(background_source, free, BACKGROUND_STEPS, settings["min_blur"])
     css = with_variables()
     REPORT["chars"] = len(css)
-    REPORT["picture"] = REPORT["picture"] or picture_report(variables["wallpaper"])
+    REPORT["picture"] = picture_report(variables["wallpaper"])
     if len(css) > CSS_LIMIT:
         warn(f"the CSS is {len(css)} characters, over T3 Code's {CSS_LIMIT} limit; publishing the palette without it.")
         return None
     return css
 
 
-def build_theme(settings, inside=None):
+def build_theme(settings, inside):
     """Omarchy's palette for T3 Code, renamed, with the CSS added; None to leave the last one."""
     # Omarchy renders this from its t3code.json.tpl (or the theme ships it).
     source = (THEME_DIR / "t3code.json").read_text()

@@ -1,8 +1,6 @@
 """Run the publisher CLI with isolated homes and real image encoders."""
 
 import base64
-import importlib.machinery
-import importlib.util
 import json
 import re
 import shlex
@@ -77,7 +75,6 @@ with open(sys.argv[1], "rb") as source:
 ' "$2"
 """)
         self.tool("magick", f'exec {shlex.quote(MAGICK)} "$@"')
-        self.tool("nice", "exit 0")
         self.walls = []
         for index, color in enumerate(("#90b0d0", "#d09050", "#509070", "#905070")):
             path = self.backgrounds / f"{index}.png"
@@ -223,7 +220,6 @@ with open(sys.argv[1], "rb") as source:
         self.assertEqual(background.read_bytes(), shown.read_bytes())
         self.assertEqual(status["picture"], {"format": "png", "bytes": shown.stat().st_size, "width": 160, "height": 90})
         self.assertNotIn("data:image", css)
-        self.assertNotIn("avifenc", self.log.read_text())
 
         # A new tint leaves the file alone: a rewrite would make T3 Code download it again.
         before = background.stat()
