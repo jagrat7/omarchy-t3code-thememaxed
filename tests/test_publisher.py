@@ -177,6 +177,15 @@ with open(sys.argv[1], "rb") as source:
             self.publish()
             self.assertEqual(Path(self.output("full")[1]["wallpaper"]), expected)
 
+    def test_changing_the_tint_keeps_the_wallpaper(self):
+        self.publish("--style", "full-alt")
+        shown = self.output("full-alt")[1]["wallpaper"]
+        for tint in ("0.3", "0.6", "auto"):
+            self.publish("--tint", tint)
+            self.assertEqual(self.output("full-alt")[1]["wallpaper"], shown)
+        self.publish()
+        self.assertNotEqual(self.output("full-alt")[1]["wallpaper"], shown)
+
     def test_bad_config_falls_back_and_unresolved_palette_preserves_theme(self):
         for config in ('style = [broken', 'style = []', 'style = {bad = 1}',
                        'style = "loud"\nmin_blur = "lots"\nmin_tint = 3\nbackdrop_tint = false\n'):

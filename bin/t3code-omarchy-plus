@@ -1058,10 +1058,19 @@ def build_theme(settings, inside=None, loading=False):
     return theme
 
 
-def publish(settings):
+def kept_wallpaper():
+    """The wallpaper inside T3 Code now, while it is still one of the theme's, else None."""
+    shown = shown_wallpaper()
+    return shown if shown in [path.resolve() for path in theme_wallpapers()] else None
+
+
+def publish(settings, keep_wallpaper=False):
+    """Publish the theme; `keep_wallpaper` keeps the picture shown now instead of dealing a new one."""
     if not (THEME_DIR / "t3code.json").is_file() or not STATE_DIR.is_dir():
         return False
-    inside = random_wallpaper() if STYLES[settings["style"]] & {"background", "backdrop"} else None
+    inside = None
+    if STYLES[settings["style"]] & {"background", "backdrop"}:
+        inside = (keep_wallpaper and kept_wallpaper()) or random_wallpaper()
     if "backdrop" in STYLES[settings["style"]] and inside and not sharp_cached(inside):
         # The sharp picture takes seconds to encode; show its place loading meanwhile.
         if placeholder := build_theme(settings, inside, loading=True):
@@ -1150,7 +1159,8 @@ def main():
         lock = None
 
     try:
-        if not publish(load_settings()) and args.style:
+        # A new tint is only a new tint: the picture under it stays.
+        if not publish(load_settings(), keep_wallpaper=bool(args.tint) and not args.style) and args.style:
             warn("T3 Code or Omarchy's T3 Code palette is missing; nothing was published.")
     except (OSError, ValueError) as error:
         warn(f"could not publish the theme: {error}")
