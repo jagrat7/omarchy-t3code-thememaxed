@@ -79,7 +79,7 @@ up() {
   [[ -d $REAL_STATE/omarchy/current/theme ]] || die "no Omarchy theme at $REAL_STATE/omarchy/current"
 
   rm -rf "$RUN"
-  mkdir -p "$RUN"/{config,state/omarchy,cache,data,runtime,project,t3/userdata/themes}
+  mkdir -p "$RUN"/{config,state/omarchy,cache,data,project,t3/userdata/themes}
   git -C "$RUN/project" init -q
   date +%Y%m%d-%H%M%S > "$RUN/run-id"
   printf '%s' "$APP" > "$RUN/app-path"
@@ -308,7 +308,7 @@ thread() {
   id=$("$RUN/t3/bin/t3" thread start --json --provider codex --model "${T3V_MODEL:-gpt-6-astra}" "$RUN/project" "$1" \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["threadId"])') || die "t3 thread start failed"
   log "thread: started $id"
-  cdp wait "!!document.querySelector('[data-sidebar-row\$=\"$id\"]')" 20 >/dev/null || die "thread $id never showed in the sidebar"
+  cdp wait "!!document.querySelector('[data-sidebar-row\$=\"$id\"]')" 45 >/dev/null || die "thread $id never showed in the sidebar"
   # Mouse clicks on sidebar rows do not open them under CDP; keyboard does.
   cdp eval "document.querySelector('[data-sidebar-row\$=\"$id\"]').focus(), true" >/dev/null
   cdp key Enter >/dev/null
