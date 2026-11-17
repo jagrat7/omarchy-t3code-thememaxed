@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+# Drive a sandboxed T3 Code with this checkout's Thememaxed publisher.
+#
+#   verify up                 sandbox homes, first publish, launch T3 Code hidden, open a conversation
+#   verify doctor             read-only: is the sandbox instance worth driving?
+#   verify publish [args]     run bin/t3code-omarchy-plus in the sandbox (same args the bar panel sends)
+#   verify publish-bg [args]  the same, in the background (to watch the full-alt skeleton while it encodes)
+#   verify state [name]       what the app shows now, as JSON (saved to evidence when named)
+#   verify shot <name>        screenshot of the app into the evidence folder
+#   verify thread <message>   start a thread with that message (via T3 Code's own t3 CLI) and open it
+#   verify cdp <args>         raw access: cdp.mjs eval|wait|click|type|key|shot (T3V_VIEWPORT=WxH for a smaller window)
+#   verify note <text>        add a line to the evidence transcript
+#   verify down               kill everything this sandbox started, remove the sandbox, keep the evidence
+#
+# Everything lives under .verify/ in the repo (gitignored): .verify/run is the
+# sandbox, .verify/evidence/<run-id>/ the proof, which `down` keeps.
+set -euo pipefail
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT=$(git -C "$HERE" rev-parse --show-toplevel)
+RUN=${T3V_RUN:-$ROOT/.verify/run}
+PORT=${T3V_PORT:-9339}
+APP=${T3V_APP:-$HOME/AppImages/t3_code_nightly.appimage}
+WORKSPACE=special:t3verify
+# T3V_PUBLISHER=<other checkout>/bin/t3code-omarchy-plus publishes that version (and its template) instead, for before/after shots.
+PUBLISHER=${T3V_PUBLISHER:-$ROOT/bin/t3code-omarchy-plus}
+REAL_STATE=${XDG_STATE_HOME:-$HOME/.local/state}
+REAL_CONFIG=${XDG_CONFIG_HOME:-$HOME/.config}
+export T3V_PORT=$PORT
+
+die() { printf 'verify: %s\n' "$*" >&2; exit 1; }
+evidence_dir() {
+  [[ -f $RUN/run-id ]] || die "no sandbox; run: verify up"
+  local dir=$ROOT/.verify/evidence/$(cat "$RUN/run-id")
+  mkdir -p "$dir" && printf '%s' "$dir"
+}
+log() { [[ -f $RUN/run-id ]] && printf '[%s] %s\n' "$(date +%T)" "$*" >> "$(evidence_dir)/transcript.log" || true; }
+cdp() { node "$HERE/cdp.mjs" "$@"; }
+
+# Every process the sandbox starts carries T3V_SANDBOX=$RUN in its environment,
+# the T3 Code launch and the publisher's own background --warm encoder alike.
+sandbox_env() {
+  env T3V_SANDBOX="$RUN" XDG_CONFIG_HOME="$RUN/config" XDG_STATE_HOME="$RUN/state" \
+    XDG_CACHE_HOME="$RUN/cache" XDG_DATA_HOME="$RUN/data" T3CODE_HOME="$RUN/t3" "$@"
+}
+
+# PIDs whose environment carries this sandbox's marker. Never by process name.
+sandbox_pids() {
+  local proc pid
+  for proc in /proc/[0-9]*; do
+    pid=${proc#/proc/}
+    [[ $pid == "$$" ]] && continue
+    tr '\0' '\n' 2>/dev/null < "$proc/environ" | grep -qxF "T3V_SANDBOX=$RUN" && printf '%s\n' "$pid"
+  done
+  return 0
+}
+
+# The T3 Code main process launch.sh recorded. Electron blanks its own environ,
+# so it is recognised by the pid file plus the CDP port in its command line.
+app_pid() {
+  local pid
+  pid=$(cat "$RUN/app.pid" 2>/dev/null) || return 0
+  tr '\0' ' ' 2>/dev/null < "/proc/$pid/cmdline" | grep -qF -- "--remote-debugging-port=$PORT" && printf '%s\n' "$pid"
+  return 0
+}
+
+port_owner() { ss -ltnpH "sport = :$PORT" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2; }
+
+up() {
+  [[ -n $(sandbox_pids)$(app_pid) ]] && die "a sandbox is already running at $RUN; run: verify down"
+  [[ -n $(port_owner) ]] && die "port $PORT is taken by pid $(port_owner), not this sandbox; set T3V_PORT"
+  [[ -x $APP ]] || die "T3 Code AppImage not found at $APP; set T3V_APP"
+  command -v hyprctl >/dev/null || die "needs Hyprland: the app launches into the hidden $WORKSPACE workspace"
+  [[ -d $REAL_STATE/omarchy/current/theme ]] || die "no Omarchy theme at $REAL_STATE/omarchy/current"
+
+  rm -rf "$RUN"
+  mkdir -p "$RUN"/{config,state/omarchy,cache,data,runtime,project,t3/userdata/themes}
+  git -C "$RUN/project" init -q
+  date +%Y%m%d-%H%M%S > "$RUN/run-id"
+  # The real Omarchy theme, read only: the publisher reads it, never writes it.
+  ln -s "$REAL_STATE/omarchy/current" "$RUN/state/omarchy/current"
+  if [[ -d $REAL_CONFIG/omarchy/backgrounds ]]; then
+    mkdir -p "$RUN/config/omarchy" && ln -s "$REAL_CONFIG/omarchy/backgrounds" "$RUN/config/omarchy/backgrounds"
+  fi
+  # T3 Code with Thememaxed picked and onboarding done, so it opens on the workspace.
+  printf '{"defaultTheme":"omarchy-plus"}\n' > "$RUN/t3/userdata/settings.json"
+  # The user's layout settings (chat width, font sizes, glass), read from their
+  # T3 Code, so the theme is seen at the width they see it.
+  python3 - "$HOME/.t3/userdata/client-settings.json" "$RUN/t3/userdata/client-settings.json" <<'PY'
+import json, sys
+try:
+    real = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    real = {}
+keep = ("chatWidth", "fontSizeInterface", "fontSizePrompt", "fontSizeCode", "glassOpacity",
+        "appearanceContrast", "fontFamilySans", "fontFamilyCode", "fontFamilyComposer", "wordWrap")
+seed = {key: real[key] for key in keep if key in real}
+seed["onboardingCompletedAt"] = "2026-01-01T00:00:00.000Z"
+json.dump(seed, open(sys.argv[2], "w"))
+PY
+  mkdir -p "$RUN/providers/codex" "$RUN/providers/claude"
+  log "up: sandbox $RUN, app $APP, port $PORT"
+
+  run_publisher --style "${T3V_STYLE:-full}" >/dev/null
+
+  cat > "$RUN/launch.sh" <<EOF
+#!/bin/bash
+echo \$\$ > "$RUN/app.pid"
+cd "$RUN"
+export T3V_SANDBOX="$RUN" XDG_CONFIG_HOME="$RUN/config" XDG_STATE_HOME="$RUN/state" XDG_CACHE_HOME="$RUN/cache" XDG_DATA_HOME="$RUN/data" T3CODE_HOME="$RUN/t3"
+# Agents start signed out, so a message sent here never runs on the user's accounts.
+export CODEX_HOME="$RUN/providers/codex" CLAUDE_CONFIG_DIR="$RUN/providers/claude"
+exec "$APP" --remote-debugging-port=$PORT --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling > "$RUN/app.log" 2>&1 < /dev/null
+EOF
+  chmod +x "$RUN/launch.sh"
+  hyprctl dispatch "hl.dsp.exec_cmd(\"$RUN/launch.sh\", { workspace = \"$WORKSPACE silent\" })" >/dev/null
+
+  local i
+  for i in $(seq 120); do curl -sf "localhost:$PORT/json/version" >/dev/null && break; sleep 0.5; done
+  curl -sf "localhost:$PORT/json/version" >/dev/null || die "T3 Code never opened CDP on $PORT; see $RUN/app.log"
+  cdp wait 'document.adoptedStyleSheets.some(s => [...s.cssRules].some(r => r.cssText.includes("--omarchy-")))' 60 >/dev/null \
+    || die "T3 Code is up but never applied the Thememaxed CSS"
+  # A fresh profile has no projects, so no conversation to theme. Add the
+  # sandbox's empty repo the way a user does: Add project > Local folder > path.
+  # ("Start without a project" is only offered to some installs, so it is not used.)
+  cdp wait '[...document.querySelectorAll("button")].some(b => b.innerText.trim() === "Add project")' 30 >/dev/null \
+    || die "T3 Code never showed its home screen"
+  cdp click "Add project" >/dev/null
+  cdp click "Local folder" >/dev/null
+  cdp wait '(document.activeElement?.placeholder || "").startsWith("Enter path")' 10 >/dev/null || die "the Local folder path field never took focus"
+  cdp type "$RUN/project" >/dev/null
+  cdp key Enter >/dev/null
+  cdp wait '!!document.querySelector("[data-workspace-area=conversation]")' 30 >/dev/null || die "adding the project opened no conversation"
+  cdp key Escape >/dev/null
+  log "up: ready (app pid $(cat "$RUN/app.pid"))"
+  echo "ready: T3 Code pid $(cat "$RUN/app.pid") on $WORKSPACE, CDP :$PORT, evidence $(evidence_dir)"
+}
+
+run_publisher() {
+  [[ -d $RUN/t3 ]] || die "no sandbox; run: verify up"
+  log "publish: t3code-omarchy-plus $*"
+  # Its own runtime dir: the publisher's lock files stay apart from the real plugin's.
+  local code=0
+  sandbox_env XDG_RUNTIME_DIR="$RUN/runtime" "$PUBLISHER" "$@" || code=$?
+  log "publish: exit $code; status $(tr -d '\n ' < "$RUN/state/omarchy-t3code-plus/status.json" 2>/dev/null | head -c 400)"
+  cat "$RUN/state/omarchy-t3code-plus/status.json" 2>/dev/null
+  return $code
+}
+
+state() {
+  local json
+  json=$(cdp eval '(() => {
+    const sheet = document.adoptedStyleSheets.map(s => [...s.cssRules].map(r => r.cssText).join("\n")).find(t => t.includes("--omarchy-")) || "";
+    const picture = (sheet.match(/--omarchy-wallpaper: *url\("data:image\/(\w+);base64,([^"]{0,64})/) || []);
+    const c = document.querySelector("[data-workspace-area=conversation]");
+    const cs = c && getComputedStyle(c);
+    let hash = 0;
+    const data = (sheet.match(/--omarchy-wallpaper: *url\("([^"]*)"/) || [, ""])[1];
+    for (let i = 0; i < data.length; i++) hash = (hash * 31 + data.charCodeAt(i)) | 0;
+    return {
+      themeApplied: sheet.length > 0,
+      cssChars: sheet.length,
+      wallpaperFormat: picture[1] || null,
+      wallpaperChars: data.length,
+      wallpaperHash: data ? (hash >>> 0).toString(16) : null,
+      skeleton: c ? getComputedStyle(c, "::after").animationName === "omarchy-skeleton" : null,
+      glass: c ? getComputedStyle(c, "::before").backdropFilter : null,
+      // Viewport x ranges of the first chat column and of the frosted glass behind it.
+      laneSpan: (() => { const l = document.querySelector(".chat-content-lane"); if (!l) return null; const r = l.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; })(),
+      glassSpan: (() => { if (!c) return null; const b = getComputedStyle(c, "::before"); const left = c.getBoundingClientRect().left + parseFloat(b.left); return [Math.round(left), Math.round(left + parseFloat(b.width))]; })(),
+      sceneTint: (sheet.match(/--omarchy-scene-tint: *([^;]+)/) || [])[1] || null,
+      conversationBackground: cs ? cs.backgroundImage.slice(0, 160) : null,
+      // True only for the theme pictures, not the built-in T3 Code textures.
+      conversationHasPicture: cs && data ? cs.backgroundImage.includes(data.slice(0, 200)) : false,
+      sidebarHasPicture: (() => {
+        const s = document.querySelector("[data-slot=sidebar-inner]");
+        const header = (sheet.match(/--omarchy-header-wallpaper: *url\("([^"]*)"/) || [, ""])[1];
+        return s && header ? getComputedStyle(s).backgroundImage.includes(header.slice(0, 200)) : false;
+      })(),
+      sidebarBackgroundSize: (() => { const s = document.querySelector("[data-slot=sidebar-inner]"); return s ? getComputedStyle(s).backgroundSize : null; })(),
+    };
+  })()')
+  local status
+  status=$(cat "$RUN/state/omarchy-t3code-plus/status.json" 2>/dev/null || echo null)
+  json=$(printf '{"app": %s, "status": %s}' "$json" "$status")
+  if [[ -n ${1:-} ]]; then
+    printf '%s\n' "$json" > "$(evidence_dir)/$1.json"
+    log "state $1: $(printf '%s' "$json" | tr -d '\n ' | head -c 400)"
+  fi
+  printf '%s\n' "$json"
+}
+
+doctor() {
+  local ok=1 pid owner
+  check() { if eval "$2"; then printf 'ok    %s\n' "$1"; else printf 'FAIL  %s\n' "$1"; ok=0; fi; }
+  check "sandbox exists at $RUN" '[[ -f $RUN/run-id ]]'
+  pid=$(app_pid)
+  check "T3 Code main process ${pid:-?} is the one this sandbox launched" '[[ -n $pid ]]'
+  check "its window, and only it, sits on the hidden $WORKSPACE workspace" \
+    "[[ \$(hyprctl clients -j | python3 -c 'import json,sys; print(\" \".join(str(c[\"pid\"]) for c in json.load(sys.stdin) if c[\"workspace\"][\"name\"]==\"$WORKSPACE\"))') == \"\$pid\" ]]"
+  owner=$(port_owner)
+  check "CDP port $PORT held by this sandbox (pid ${owner:-none})" \
+    '[[ -n $owner ]] && { [[ $owner == "$pid" ]] || sandbox_pids | grep -qx "$owner"; }'
+  check "its processes use the sandbox T3CODE_HOME, not ~/.t3" \
+    '(for p in $(sandbox_pids); do tr "\0" "\n" 2>/dev/null < /proc/$p/environ | grep -qxF "T3CODE_HOME=$RUN/t3" && exit 0; done; exit 1)'
+  check "the real ~/.t3 theme file was not written by this run" '[[ ! "$HOME/.t3/userdata/themes/omarchy-plus.json" -nt "$RUN/run-id" ]]'
+  check "page is t3code:// and Thememaxed CSS is applied" \
+    'cdp eval "document.location.protocol === \"t3code:\" && document.adoptedStyleSheets.some(s => [...s.cssRules].some(r => r.cssText.includes(\"--omarchy-\")))" 2>/dev/null | grep -q true'
+  check "a conversation view is open" 'cdp eval "!!document.querySelector(\"[data-workspace-area=conversation]\")" 2>/dev/null | grep -q true'
+  check "last publish succeeded" 'grep -q "\"published\": true" "$RUN/state/omarchy-t3code-plus/status.json" 2>/dev/null'
+  printf 'app   %s\n' "$(curl -sf "localhost:$PORT/json/version" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Browser"])' 2>/dev/null || echo '?')"
+  printf 'repo  %s %s\n' "$(git -C "$ROOT" rev-parse --short HEAD)" "$(git -C "$ROOT" diff --quiet HEAD -- bin themed && echo clean || echo 'with uncommitted publisher/template changes')"
+  ((ok))
+}
+
+down() {
+  # The PIDs are taken once, while their environ still shows the marker: an
+  # exiting Electron drops it long before it lets go of the port.
+  local pids pid alive
+  pids=$(printf '%s\n' $(app_pid) $(sandbox_pids) | sort -u)
+  if [[ -n $pids ]]; then
+    kill $pids 2>/dev/null || true
+    for _ in $(seq 120); do
+      alive=""
+      for pid in $pids; do kill -0 "$pid" 2>/dev/null && alive+=" $pid"; done
+      [[ -z $alive ]] && break
+      sleep 0.25
+    done
+    [[ -n $alive ]] && kill -9 $alive 2>/dev/null || true
+  fi
+  local evidence=""
+  [[ -f $RUN/run-id ]] && evidence=$(evidence_dir) && log "down: sandbox removed"
+  rm -rf "$RUN"
+  echo "down: sandbox gone${evidence:+; evidence kept in $evidence}"
+}
+
+# A thread with a real user message, for anything drawn behind messages. The
+# agent is signed out in the sandbox, so the turn fails with an auth error
+# banner and nothing runs on the user's accounts.
+thread() {
+  [[ -n ${1:-} ]] || die "usage: verify thread <message>"
+  local id
+  id=$("$RUN/t3/bin/t3" thread start --json --provider codex --model "${T3V_MODEL:-gpt-6-astra}" "$RUN/project" "$1" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["threadId"])') || die "t3 thread start failed"
+  log "thread: started $id"
+  cdp wait "!!document.querySelector('[data-sidebar-row\$=\"$id\"]')" 20 >/dev/null || die "thread $id never showed in the sidebar"
+  # Mouse clicks on sidebar rows do not open them under CDP; keyboard does.
+  cdp eval "document.querySelector('[data-sidebar-row\$=\"$id\"]').focus(), true" >/dev/null
+  cdp key Enter >/dev/null
+  cdp wait 'document.querySelectorAll("[data-user-message-bubble]").length > 0' 20 >/dev/null || die "thread $id opened without its message"
+  log "thread: opened $id"
+  echo "$id"
+}
+
+case ${1:-} in
+  up) up ;;
+  doctor) doctor ;;
+  publish) shift; run_publisher "$@" ;;
+  publish-bg) shift; (run_publisher "$@" > "$RUN/publish-bg.out" 2>&1 &) ; echo "publishing in the background: $*" ;;
+  state) shift; state "${1:-}" ;;
+  shot) [[ -n ${2:-} ]] || die "usage: verify shot <name>"; cdp shot "$(evidence_dir)/$2.png"; log "shot $2.png" ;;
+  thread) shift; thread "${1:-}" ;;
+  cdp) shift; cdp "$@" ;;
+  note) shift; log "note: $*"; echo "noted" ;;
+  down) down ;;
+  *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
