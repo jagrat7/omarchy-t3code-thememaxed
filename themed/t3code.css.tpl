@@ -336,10 +336,49 @@
   --chat-composer-glass-surface: var(--omarchy-scene-card) !important;
 }
 
-/* The composer is frosted like the chat column, so messages scrolling
-   under it blur instead of showing through sharp. */
+/* The composer is frosted: always on a new thread, and on an open thread
+   while messages are scrolled up behind it. T3 Code gives the composer a
+   view-transition-name, which stops any blur inside it from seeing the
+   page behind, so the frost is a layer one level up, on the composer stack,
+   pinned to the composer's box. The open-thread frost follows the message
+   list's scroll position; without scroll-driven animations it stays off. */
 [data-slot="composer-shell"] {
-  --glass-blur: 24px !important;
+  anchor-name: --omarchy-composer;
+}
+
+[class~="group/composer-stack"]::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: anchor(--omarchy-composer top);
+  left: anchor(--omarchy-composer left);
+  right: anchor(--omarchy-composer right);
+  bottom: anchor(--omarchy-composer bottom);
+  border-radius: var(--omarchy-radius);
+  pointer-events: none;
+}
+
+[data-chat-composer-overlay].inset-0 [class~="group/composer-stack"]::before {
+  backdrop-filter: blur(24px);
+}
+
+.messages-timeline-scroll {
+  scroll-timeline: --omarchy-messages y;
+}
+
+:has(> [data-chat-composer-overlay]) {
+  timeline-scope: --omarchy-messages;
+}
+
+[data-chat-composer-overlay]:not(.inset-0) [class~="group/composer-stack"]::before {
+  animation: omarchy-composer-frost linear both;
+  animation-timeline: --omarchy-messages;
+  animation-range: calc(100% - 2rem) 100%;
+}
+
+@keyframes omarchy-composer-frost {
+  from { backdrop-filter: blur(24px); }
+  to { backdrop-filter: none; }
 }
 /* @end */
 
