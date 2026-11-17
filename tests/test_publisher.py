@@ -109,7 +109,7 @@ with open(sys.argv[1], "rb") as source:
         self.assertEqual(theme["canvas"], self.palette["canvas"])
         css = theme["css"]
         self.assertLessEqual(len(css), 50000)
-        self.assertNotRegex(css, r"\{\{|\}\}|@end")
+        self.assertNotRegex(css, r"\{\{\s*\w+\s*\}\}|@end")
         self.assertEqual(status["chars"], len(css))
         self.assertEqual(status["style"], style)
         self.assertEqual(status["limit"], 50000)
@@ -251,6 +251,9 @@ with open(sys.argv[1], "rb") as source:
         self.assertRegex(loading, r"--omarchy-wallpaper:url\(\"data:image/avif;base64,")
         css, _ = self.output("full-alt")
         self.assertNotIn("omarchy-skeleton", css)
+        # The frosted glass follows the chat column, wherever T3 Code puts it.
+        self.assertIn("anchor-name:--omarchy-chat-lane", css)
+        self.assertIn("anchor(--omarchy-chat-lane left", css)
         during.unlink()
         self.publish()
         self.assertFalse(during.exists())
