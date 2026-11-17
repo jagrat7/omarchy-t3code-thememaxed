@@ -365,6 +365,16 @@
   border-top-right-radius: var(--omarchy-radius) !important;
 }
 
+/* The stash tab is part of the composer window: the composer's own fill and
+   the inactive border, instead of T3 Code's raised surface and its faint
+   outline. Error and warning banners keep their colours. */
+[data-composer-shoulder-tab],
+[data-composer-shoulder-tab] [data-composer-banner-surface],
+[data-composer-banner-surface]:has(> [data-composer-shoulder-tab]) {
+  --chat-composer-attached-surface: var(--chat-composer-glass-surface) !important;
+  --chat-composer-attached-outline: var(--omarchy-inactive-border) !important;
+}
+
 /* The form sits inside the card in current T3 Code and around it in older
    builds, so focus is looked for both ways. */
 [data-slot="composer-host"]:focus-within::after,
