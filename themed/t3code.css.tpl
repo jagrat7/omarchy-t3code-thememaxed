@@ -349,6 +349,25 @@
   box-shadow: none !important;
 }
 
+/* The composer's glass fill is drawn on ::before layers that T3 Code rounds
+   a step more than the card. Inside the card's frame that left a crescent of
+   the background at every corner, so the fill takes the frame's corners.
+   Banners docked on the composer (such as the stash tab) follow suit. */
+[data-slot="composer-host"]::before,
+[data-slot="composer-shell"]::before,
+[data-chat-composer-main-surface]::before,
+[data-composer-banner-surface="detached"]::before {
+  border-radius: var(--omarchy-radius) !important;
+}
+
+[data-composer-banner-surface="attached"]::before {
+  border-top-left-radius: var(--omarchy-radius) !important;
+  border-top-right-radius: var(--omarchy-radius) !important;
+}
+
+/* The form sits inside the card in current T3 Code and around it in older
+   builds, so focus is looked for both ways. */
+[data-slot="composer-host"]:focus-within::after,
 [data-chat-composer-form]:focus-within [data-slot="composer-host"]::after,
 [data-chat-composer-form]:focus-within [data-chat-composer-main-surface]::after {
   border: var(--omarchy-border-width) solid transparent !important;
