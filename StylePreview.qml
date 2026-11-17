@@ -8,6 +8,8 @@ Item {
   property color foreground: "white"
   property color background: "black"
   property color accent: "white"
+  // While the style publishes, a skeleton shimmer sweeps across the preview.
+  property bool loading: false
 
   readonly property bool header: style === "minimal" || style === "full" || style === "max"
   readonly property bool conversation: style === "full" || style === "max"
@@ -105,6 +107,35 @@ Item {
       }
 
       Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: root.ink(0.1) }
+    }
+  }
+
+  Item {
+    anchors.fill: parent
+    visible: root.loading
+    clip: true
+
+    Rectangle { anchors.fill: parent; radius: root.radius; color: root.shade(0.35) }
+
+    Rectangle {
+      id: sweep
+      width: parent.width * 0.6
+      height: parent.height
+      gradient: Gradient {
+        orientation: Gradient.Horizontal
+        GradientStop { position: 0; color: root.ink(0) }
+        GradientStop { position: 0.5; color: root.ink(0.18) }
+        GradientStop { position: 1; color: root.ink(0) }
+      }
+
+      NumberAnimation on x {
+        running: root.loading && root.visible
+        loops: Animation.Infinite
+        from: -sweep.width
+        to: root.width
+        duration: 1100
+        easing.type: Easing.InOutQuad
+      }
     }
   }
 

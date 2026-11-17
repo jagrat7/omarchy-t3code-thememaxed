@@ -121,6 +121,7 @@ Panel {
                   foreground: root.foreground
                   background: Color.background
                   accent: Color.accent
+                  loading: tile.chosen && !!root.service && root.service.publishing
                 }
 
                 Text {

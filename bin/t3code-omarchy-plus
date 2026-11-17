@@ -66,6 +66,8 @@ SHARP_WIDTH_POWER = 1.6
 SHARP_LEVEL_GROWTH = 0.065
 SHARP_CACHE = STATUS.parent / "sharp-cache.json"
 SHARP_CACHE_ENTRIES = 32
+# While that runs, full-alt shows this small, quick picture under a shimmer.
+LOADING_STEPS = ((96, 40),)
 WARM_LOCK = LOCK.with_name("t3code-omarchy-plus-warm.lock")
 # Pixel art drawn at a whole-number scale (each art pixel a block of screen
 # pixels) is sent at its own size and scaled up by T3 Code with hard edges,
@@ -951,10 +953,12 @@ def write_status(settings, published):
         pass
 
 
-def build_css(settings, inside=None):
+def build_css(settings, inside=None, loading=False):
     """The CSS with the theme's colours and the Omarchy values in, or None when it cannot be used.
 
     `inside` is the wallpaper for inside T3 Code; a random one when None.
+    With `loading`, full-alt gets a quick, small picture under a shimmer, to
+    show while its sharp one is encoded.
     """
     try:
         css = render_template(TEMPLATE.read_text(), theme_values())
@@ -964,6 +968,8 @@ def build_css(settings, inside=None):
 
     variables = omarchy_variables(settings)
     keep = set(STYLES[settings["style"]])
+    if loading and "backdrop" in keep:
+        keep.add("loading")
     if variables["radius"] == "0px":
         keep.add("square")
     css = keep_blocks(css, keep)
@@ -1004,7 +1010,11 @@ def build_css(settings, inside=None):
     wants_background = "var(--omarchy-wallpaper)" in css
     variables["header-wallpaper"] = variables["wallpaper"] = "none"
     REPORT["picture"] = None
-    if wants_background and "backdrop" in keep:
+    if wants_background and "loading" in keep:
+        free = CSS_LIMIT - len(with_variables())
+        variables["wallpaper"] = wallpaper_css(inside, free, LOADING_STEPS)
+        variables["wallpaper-rendering"] = "auto"
+    elif wants_background and "backdrop" in keep:
         # Sized as if pixelated, the longer of the two renderings.
         variables["wallpaper-rendering"] = "pixelated"
         free = CSS_LIMIT - len(with_variables())
@@ -1031,7 +1041,7 @@ def build_css(settings, inside=None):
     return css
 
 
-def build_theme(settings):
+def build_theme(settings, inside=None, loading=False):
     """Omarchy's palette for T3 Code, renamed, with the CSS added; None to leave the last one."""
     # Omarchy renders this from its t3code.json.tpl (or the theme ships it).
     source = (THEME_DIR / "t3code.json").read_text()
@@ -1043,7 +1053,7 @@ def build_theme(settings):
         raise ValueError("t3code.json is not a theme object")
     theme["name"] = THEME_NAME
     theme.pop("css", None)
-    if css := build_css(settings):
+    if css := build_css(settings, inside, loading):
         theme["css"] = css
     return theme
 
@@ -1051,7 +1061,12 @@ def build_theme(settings):
 def publish(settings):
     if not (THEME_DIR / "t3code.json").is_file() or not STATE_DIR.is_dir():
         return False
-    theme = build_theme(settings)
+    inside = random_wallpaper() if STYLES[settings["style"]] & {"background", "backdrop"} else None
+    if "backdrop" in STYLES[settings["style"]] and inside and not sharp_cached(inside):
+        # The sharp picture takes seconds to encode; show its place loading meanwhile.
+        if placeholder := build_theme(settings, inside, loading=True):
+            write_json(TARGET, placeholder)
+    theme = build_theme(settings, inside)
     if theme is None:
         write_status(settings, False)
         return True
@@ -1068,6 +1083,12 @@ def publish(settings):
         except OSError:
             pass
     return True
+
+
+def sharp_cached(path):
+    """Whether full-alt's picture of `path` is already encoded."""
+    key = shutil.which("avifenc") and sharp_cache_key(path)
+    return bool(key) and any(entry.get("key") == key and entry.get("picture") for entry in read_sharp_cache())
 
 
 def uncached_wallpapers():

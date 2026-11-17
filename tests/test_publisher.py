@@ -231,6 +231,25 @@ with open(sys.argv[1], "rb") as source:
         self.assertIn("avifenc", self.log.read_text())
 
     @unittest.skipUnless(AVIFENC, "needs avifenc")
+    def test_full_alt_shows_a_skeleton_while_its_picture_encodes(self):
+        self.one_wallpaper()
+        during = self.home / "during.json"
+        self.tool("avifenc", f'[ -e {shlex.quote(str(during))} ] || {shutil.which("cp")} {shlex.quote(str(self.target))} {shlex.quote(str(during))}\n'
+                             f'exec {shlex.quote(AVIFENC)} "$@"')
+        self.publish("--style", "full-alt")
+        loading = json.loads(during.read_text())["css"]
+        self.assertIn("@keyframes omarchy-skeleton", loading)
+        self.assertRegex(loading, r"--omarchy-wallpaper:url\(\"data:image/avif;base64,")
+        css, _ = self.output("full-alt")
+        self.assertNotIn("omarchy-skeleton", css)
+        during.unlink()
+        self.publish()
+        self.assertFalse(during.exists())
+        self.assertNotIn("omarchy-skeleton", self.output("full-alt")[0])
+        self.publish("--style", "full")
+        self.assertNotIn("omarchy-skeleton", self.output("full")[0])
+
+    @unittest.skipUnless(AVIFENC, "needs avifenc")
     def test_sharp_cache_adapts_to_a_smaller_css_budget(self):
         self.one_wallpaper()
         subprocess.run([MAGICK, "-size", "320x180", "xc:", "-seed", "7", "+noise", "Random", str(self.walls[0])],

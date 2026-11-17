@@ -186,7 +186,7 @@
    theme's first wallpaper, --omarchy-wallpaper a random one of the theme's.
    The chosen style keeps some of the @part blocks below: minimal keeps the
    header, full adds the background, max adds the sidebar, and full-alt
-   keeps only its own. */
+   keeps only its own, plus the loading one until its picture is ready. */
 
 /* @part header (minimal, full, max): the theme's first wallpaper sits behind the sidebar's
    header row. The picture is scaled to the sidebar's width and the row shows
@@ -312,6 +312,33 @@
   --glass-blur: 0px !important;
   --glass-opacity: 100% !important;
   --chat-composer-glass-surface: var(--omarchy-scene-card) !important;
+}
+/* @end */
+
+/* @part loading (full-alt, while its sharp picture is encoded): a small copy
+   of the picture stands in, with a skeleton shimmer sweeping across it. The
+   sweep stops on its own after a minute and a half, should the sharp
+   picture never come. */
+[data-workspace-area="conversation"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(100deg, transparent 35%, color-mix(in srgb, {{ foreground }} 10%, transparent) 50%, transparent 65%) 0 0 / 250% 100% no-repeat;
+  animation: omarchy-skeleton 1.6s ease-in-out 56;
+  pointer-events: none;
+}
+
+@keyframes omarchy-skeleton {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-workspace-area="conversation"]::after {
+    animation: none;
+    background: color-mix(in srgb, {{ foreground }} 6%, transparent);
+  }
 }
 /* @end */
 
