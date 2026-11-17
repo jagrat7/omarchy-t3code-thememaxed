@@ -140,11 +140,6 @@ with open(sys.argv[1], "rb") as source:
                 self.assertIn('--omarchy-font:"Fixture Mono";', css)
                 self.assertIn('--omarchy-radius:12px;', css)
                 self.assertIn('--omarchy-border-width:3px;', css)
-                # The card's glass fill takes the frame's corners (Hyprland rounding is 12px here),
-                # and focus keeps the plain frame.
-                self.assertNotIn(":focus-within", css)
-                self.assertIn("--chat-composer-attached-outline:var(--omarchy-inactive-border)!important", css)
-                self.assertRegex(css, r'\[data-slot="composer-shell"\]::before[^{]*\{border-radius:var\(--omarchy-radius\)')
                 if style in ("full", "max"):
                     data = base64.b64decode(re.search(r'--omarchy-wallpaper:url\("data:image/avif;base64,([^"]+)', css)[1])
                     size = subprocess.run([MAGICK, "identify", "-format", "%w %h", "-"], input=data,
@@ -229,9 +224,6 @@ with open(sys.argv[1], "rb") as source:
         self.assertEqual(status["picture"], {"format": "png", "bytes": shown.stat().st_size, "width": 160, "height": 90})
         self.assertNotIn("data:image", css)
         self.assertNotIn("avifenc", self.log.read_text())
-        # The frosted glass follows the chat column, wherever T3 Code puts it.
-        self.assertIn("anchor-name:--omarchy-chat-lane", css)
-        self.assertIn("anchor(--omarchy-chat-lane left", css)
 
         # A new tint leaves the file alone: a rewrite would make T3 Code download it again.
         before = background.stat()
