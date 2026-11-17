@@ -52,7 +52,7 @@ The wallpaper comes in three strengths, plus a sharp alternative to `full`:
 | `minimal` | Theme's first wallpaper | Plain | Plain |
 | `full` (default) | Theme's first wallpaper | Random theme wallpaper | Plain |
 | `max` | Theme's first wallpaper | Random theme wallpaper | Theme's first wallpaper |
-| `full-alt` (not recommended) | Plain | Random theme wallpaper, sharp, behind a frosted chat column | Plain |
+| `full-alt` (not recommended) | Plain | Random theme wallpaper at full size, behind a frosted chat column | Plain |
 
 <table>
   <tr>
@@ -146,11 +146,12 @@ This puts `t3code-omarchy-plus` in `~/.local/bin` and adds `theme-set` and
   (`omarchy-theme-set-t3code`) and resolves theme colours
   (`omarchy-theme-color`).
 - T3 Code nightly 0.1.10 from 15 November 2026 or newer, which takes 50,000
-  characters of theme CSS.
+  characters of theme CSS. `full-alt` needs T3 Code 0.1.10 (or a nightly from
+  16 November 2026) or newer, which shows a theme's background image file;
+  older versions show it without the wallpaper.
 - Python 3.11 or newer, which Omarchy ships.
 - ImageMagick with AVIF support, which Omarchy ships. If you removed it,
   `omarchy pkg add imagemagick libheif` brings the wallpaper back.
-- Optional: `avifenc` (`libavif`) for sharper wallpapers.
 
 Tested with Omarchy 4.5 and T3 Code 0.1.10 (nightly, November 2026).
 
@@ -158,7 +159,9 @@ Tested with Omarchy 4.5 and T3 Code 0.1.10 (nightly, November 2026).
 
 - T3 Code takes at most 50,000 characters of theme CSS, pictures included. The
   publisher shrinks the wallpapers to fit and leaves them out, then the CSS,
-  rather than publish a theme T3 Code would reject.
+  rather than publish a theme T3 Code would reject. `full-alt` is the
+  exception: its wallpaper is a file beside the theme
+  (`~/.t3/userdata/themes/omarchy-plus.jpg`, `.png` or `.webp`), shown whole.
 - Syntax colours in T3 Code's file viewer and diffs can't be themed: they are
   drawn in shadow DOM with a fixed scheme that theme CSS cannot reach.
 - The CSS uses T3 Code's documented `data-*` selectors. The square-corner
