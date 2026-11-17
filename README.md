@@ -52,7 +52,7 @@ The wallpaper comes in three strengths, plus a sharp alternative to `full`:
 | `minimal` | Theme's first wallpaper | Plain | Plain |
 | `full` (default) | Theme's first wallpaper | Random theme wallpaper | Plain |
 | `max` | Theme's first wallpaper | Random theme wallpaper | Theme's first wallpaper |
-| `full-alt` (not recommended) | Plain | Random theme wallpaper at full size, behind a frosted chat column | Plain |
+| `full-alt` | Plain | Random theme wallpaper at full size, behind a frosted chat column | Plain |
 
 <table>
   <tr>
