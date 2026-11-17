@@ -342,7 +342,7 @@
    page behind, so the frost is a layer one level up, on the composer stack,
    pinned to the composer's box. The open-thread frost follows the message
    list's scroll position; without scroll-driven animations it stays off. */
-[data-slot="composer-shell"] {
+[data-slot="composer-host"] {
   anchor-name: --omarchy-composer;
 }
 
