@@ -198,10 +198,26 @@ $V down
 - every process whose environ carries `T3V_SANDBOX=<sandbox>`. This includes
   the publisher's background `--warm` encoder.
 
-It waits up to 30 s for them to exit, because Electron is slow to release
-the port, then removes `.verify/run/`. `.verify/evidence/` is kept. Never
-kill by process name: the user's own T3 Code is running alongside, and this
-agent may be running inside it. Run `down` after every failed `up` too.
+It stops them in a fixed order:
+
+1. The T3 Code main process gets SIGTERM, and `down` waits up to 30 s while
+   it quits and closes its own renderers and backend.
+2. Any leftover helpers come next.
+3. The AppImage's own process (the one whose `/proc/<pid>/exe` is the
+   AppImage file) goes last. It serves the FUSE mount every other T3 Code
+   process runs from, and it exits by itself once they are gone.
+
+Then `down` removes `.verify/run/`. `.verify/evidence/` is kept. A full
+`down` takes about 7 s.
+
+Never kill everything at once. If the mount goes first, every Electron
+process still running dies with SIGBUS. Each one leaves a core dump, and the
+user gets a "Process crashed: t3code" notification. Check with
+`coredumpctl list --since "-10 min"`: a clean `down` adds nothing.
+
+Never kill by process name: the user's own T3 Code is running alongside,
+and this agent may be running inside it. Run `down` after every failed `up`
+too.
 
 ## Helpers
 
