@@ -340,7 +340,7 @@
   backdrop-filter: none !important;
 }
 
-/* The composer is a window: inactive border at rest, active border in focus.
+/* The composer is framed by the inactive window border, at rest and in focus.
    T3 Code draws the outline on the card, or on its main surface while a
    banner (such as the stash tab) is attached, so both are covered. */
 [data-slot="composer-host"]::after,
@@ -375,14 +375,3 @@
   --chat-composer-attached-outline: var(--omarchy-inactive-border) !important;
 }
 
-/* The form sits inside the card in current T3 Code and around it in older
-   builds, so focus is looked for both ways. */
-[data-slot="composer-host"]:focus-within::after,
-[data-chat-composer-form]:focus-within [data-slot="composer-host"]::after,
-[data-chat-composer-form]:focus-within [data-chat-composer-main-surface]::after {
-  border: var(--omarchy-border-width) solid transparent !important;
-  background: var(--omarchy-active-border) border-box !important;
-  mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
-  mask-clip: padding-box, border-box;
-  mask-composite: exclude;
-}
