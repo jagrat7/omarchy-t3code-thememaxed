@@ -126,7 +126,7 @@ $V note '<text>'           # add a line to the evidence transcript
 | `conversationHasPicture` | The conversation area shows a wallpaper. |
 | `sidebarHasPicture`, `sidebarBackgroundSize` | The sidebar shows a wallpaper, and how it is sized. |
 
-`status` (from the publisher) names the wallpaper file, tint and quality.
+`status` (from the publisher) names the wallpaper file, tint and picture size.
 
 The stable handles in T3 Code:
 
