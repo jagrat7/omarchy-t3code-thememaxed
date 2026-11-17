@@ -104,6 +104,7 @@
 
 [data-user-message-bubble],
 [data-slot="composer-host"],
+[data-chat-composer-main-surface],
 [data-thread-details-card],
 .chat-markdown-codeblock,
 .chat-markdown :is(pre, code, blockquote, img),
@@ -266,6 +267,10 @@
     var(--theme-background-image, none) center / cover no-repeat,
     {{ background }} !important;
   isolation: isolate;
+  /* The glass reaches 6rem past the column even where the window is too
+     narrow for it; the part outside the conversation is cut off, so the
+     soft edge never lands under the text. */
+  overflow: clip;
 }
 
 [data-workspace-area="conversation"]::before {
@@ -285,8 +290,7 @@
 /* The chat column is not always centred in the conversation: T3 Code can pad
    the timeline on the right to clear the thread details panel, and the
    column moves left. The glass is anchored to the column
-   itself, 6rem wider on each side and kept inside the conversation, so it
-   follows wherever the column goes. Without a column (a new thread) it falls
+   itself, 6rem wider on each side, so it follows wherever the column goes. Without a column (a new thread) it falls
    back to the full width, where it is hidden anyway. */
 [data-timeline-root].chat-content-lane {
   anchor-name: --omarchy-chat-lane;
@@ -296,8 +300,8 @@
   [data-workspace-area="conversation"]::before {
     margin: 0;
     width: auto;
-    left: max(0px, calc(anchor(--omarchy-chat-lane left, 6rem) - 6rem));
-    right: max(0px, calc(anchor(--omarchy-chat-lane right, 6rem) - 6rem));
+    left: calc(anchor(--omarchy-chat-lane left, 6rem) - 6rem);
+    right: calc(anchor(--omarchy-chat-lane right, 6rem) - 6rem);
   }
 }
 
@@ -331,6 +335,12 @@
   --glass-opacity: 100% !important;
   --chat-composer-glass-surface: var(--omarchy-scene-card) !important;
 }
+
+/* The composer is frosted like the chat column, so messages scrolling
+   under it blur instead of showing through sharp. */
+[data-slot="composer-shell"] {
+  --glass-blur: 24px !important;
+}
 /* @end */
 
 /* The row under the composer (machine, checkout, branch, access) is just
@@ -355,7 +365,6 @@
    Banners docked on the composer (such as the stash tab) follow suit. */
 [data-slot="composer-host"]::before,
 [data-slot="composer-shell"]::before,
-[data-chat-composer-main-surface]::before,
 [data-composer-banner-surface="detached"]::before {
   border-radius: var(--omarchy-radius) !important;
 }
@@ -365,13 +374,16 @@
   border-top-right-radius: var(--omarchy-radius) !important;
 }
 
-/* The stash tab is part of the composer window: the composer's own fill and
-   the inactive border, instead of T3 Code's raised surface and its faint
-   outline. Error and warning banners keep their colours. */
-[data-composer-shoulder-tab],
-[data-composer-shoulder-tab] [data-composer-banner-surface],
-[data-composer-banner-surface]:has(> [data-composer-shoulder-tab]) {
+/* Banners docked on the composer draw their outline from the composer's
+   outline colour, so they share its inactive border. Error and warning
+   banners keep their own. */
+[data-slot="composer-shell"] {
+  --chat-composer-outline: var(--omarchy-inactive-border) !important;
+}
+
+/* The stash tab is part of the composer window: the composer's own fill,
+   instead of T3 Code's raised surface. */
+[data-composer-shoulder-tab] {
   --chat-composer-attached-surface: var(--chat-composer-glass-surface) !important;
-  --chat-composer-attached-outline: var(--omarchy-inactive-border) !important;
 }
 
