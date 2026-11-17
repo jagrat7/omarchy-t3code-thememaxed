@@ -283,6 +283,25 @@
   transition: opacity 0.3s ease;
 }
 
+/* The chat column is not always centred in the conversation: T3 Code can pad
+   the timeline on the right to clear the thread details panel, and the
+   column moves left. The glass is anchored to the column
+   itself, 6rem wider on each side and kept inside the conversation, so it
+   follows wherever the column goes. Without a column (a new thread) it falls
+   back to the full width, where it is hidden anyway. */
+[data-timeline-root].chat-content-lane {
+  anchor-name: --omarchy-chat-lane;
+}
+
+@supports (anchor-name: --omarchy-chat-lane) {
+  [data-workspace-area="conversation"]::before {
+    margin: 0;
+    width: auto;
+    left: max(0px, calc(anchor(--omarchy-chat-lane left, 6rem) - 6rem));
+    right: max(0px, calc(anchor(--omarchy-chat-lane right, 6rem) - 6rem));
+  }
+}
+
 /* A new thread (see the background part) has no chat column: the whole
    scene shows, lightly tinted, with a glow of the tint behind the heading
    and composer to keep them readable. */
