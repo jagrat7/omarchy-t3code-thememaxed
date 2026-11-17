@@ -16,7 +16,7 @@ T3 Code, and you check the pixels and computed CSS in that app.
 output. This skill is the proof that T3 Code shows it.
 
 ```bash
-V=.claude/skills/verify-thememaxed/scripts/verify
+V=.agents/skills/verify-thememaxed/scripts/verify
 ```
 
 Run every command from the repo root.
@@ -229,7 +229,7 @@ too.
 - `scripts/verify`: the CLI above. Running it with no arguments prints usage.
 - `scripts/cdp.mjs`: a dependency-free CDP client (Node's `fetch` and
   `WebSocket`) used by `verify cdp`. It also runs directly as
-  `T3V_PORT=9339 node .claude/skills/verify-thememaxed/scripts/cdp.mjs eval 'document.title'`.
+  `T3V_PORT=9339 node .agents/skills/verify-thememaxed/scripts/cdp.mjs eval 'document.title'`.
 
 ## Not covered
 

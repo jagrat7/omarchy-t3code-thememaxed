@@ -3,11 +3,11 @@
 This folder is the maintained source for checking what users of T3 Code
 Thememaxed see. Read this index before you drive the app, then follow the
 matching feature file as the recipe. The harness is the `verify-thememaxed`
-skill (`.claude/skills/verify-thememaxed/`). Every command below assumes this
+skill (`.agents/skills/verify-thememaxed/`). Every command below assumes this
 is set:
 
 ```bash
-V=.claude/skills/verify-thememaxed/scripts/verify
+V=.agents/skills/verify-thememaxed/scripts/verify
 ```
 
 ## Baseline preconditions
