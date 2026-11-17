@@ -213,20 +213,64 @@ doctor() {
   ((ok))
 }
 
+# The AppImage process itself serves the FUSE mount that every other T3 Code
+# process runs from. Stopping it while they live pulls their code out from
+# under them: each dies with SIGBUS and leaves a core dump (and a "Process
+# crashed" notification). So it is stopped last.
+mount_pids() {
+  local app pid
+  app=$(readlink -f "$APP")
+  for pid in $(sandbox_pids); do
+    [[ $(readlink -f "/proc/$pid/exe" 2>/dev/null) == "$app" ]] && printf '%s\n' "$pid"
+  done
+  return 0
+}
+
+# Wait up to $1 quarter-seconds for the other arguments' PIDs to exit; print those still alive.
+wait_gone() {
+  local ticks=$1 pid alive=""; shift
+  for _ in $(seq "$ticks"); do
+    alive=""
+    for pid in "$@"; do kill -0 "$pid" 2>/dev/null && alive+=" $pid"; done
+    [[ -z $alive ]] && return 0
+    sleep 0.25
+  done
+  printf '%s\n' $alive
+}
+
 down() {
   # The PIDs are taken once, while their environ still shows the marker: an
   # exiting Electron drops it long before it lets go of the port.
-  local pids pid alive
-  pids=$(printf '%s\n' $(app_pid) $(sandbox_pids) | sort -u)
-  if [[ -n $pids ]]; then
-    kill $pids 2>/dev/null || true
-    for _ in $(seq 120); do
-      alive=""
-      for pid in $pids; do kill -0 "$pid" 2>/dev/null && alive+=" $pid"; done
-      [[ -z $alive ]] && break
-      sleep 0.25
-    done
-    [[ -n $alive ]] && kill -9 $alive 2>/dev/null || true
+  local main mounts rest left pid
+  main=$(app_pid)
+  mounts=$(mount_pids)
+  rest=$(for pid in $(sandbox_pids); do
+    [[ $pid == "$main" ]] || grep -qxF "$pid" <<< "$mounts" || printf '%s\n' "$pid"
+  done)
+  # 1. T3 Code quits on SIGTERM and closes its own renderers and backend,
+  #    while the mount is still there to read from.
+  if [[ -n $main ]]; then
+    kill "$main" 2>/dev/null || true
+    left=$(wait_gone 120 "$main")
+    [[ -n $left ]] && kill -9 $left 2>/dev/null
+  fi
+  # 2. Anything of ours that outlived it, such as the publisher's --warm encoder.
+  if [[ -n $rest ]]; then
+    left=$(wait_gone 20 $rest)
+    if [[ -n $left ]]; then
+      kill $left 2>/dev/null || true
+      left=$(wait_gone 40 $left)
+      [[ -n $left ]] && kill -9 $left 2>/dev/null
+    fi
+  fi
+  # 3. The mount, which unmounts and exits by itself once nothing runs from it.
+  if [[ -n $mounts ]]; then
+    left=$(wait_gone 40 $mounts)
+    if [[ -n $left ]]; then
+      kill $left 2>/dev/null || true
+      left=$(wait_gone 40 $left)
+      [[ -n $left ]] && kill -9 $left 2>/dev/null
+    fi
   fi
   local evidence=""
   [[ -f $RUN/run-id ]] && evidence=$(evidence_dir) && log "down: sandbox removed"
