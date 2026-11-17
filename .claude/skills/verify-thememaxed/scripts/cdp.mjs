@@ -8,7 +8,7 @@
 //   cdp.mjs click '<text or aria-label>'      real mouse click on the first visible match
 //                                             (whole text, its first line, or aria-label)
 //   cdp.mjs type '<text>'                     type into the focused field
-//   cdp.mjs key <Enter|Escape|Tab|Backspace>  press one key
+//   cdp.mjs key <Enter|Escape|Tab|Backspace|Control+s>  press one key, modifiers allowed
 //
 // The port comes from T3V_PORT (set by the verify CLI). T3V_VIEWPORT=<width>x<height>
 // lays the app out at that size for this one command, as a smaller window would.
@@ -101,11 +101,22 @@ try {
     await cdp.send("Input.insertText", { text: arg });
     console.log(`typed ${JSON.stringify(arg)}`);
   } else if (command === "key") {
-    const codes = { Enter: 13, Escape: 27, Tab: 9, Backspace: 8 };
-    if (!(arg in codes)) throw new Error(`unknown key: ${arg}`);
-    const key = { key: arg, code: arg, windowsVirtualKeyCode: codes[arg] };
-    await cdp.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...key, ...(arg === "Enter" ? { text: "\r" } : {}) });
-    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+    // A named key, or a letter with modifiers such as Control+s.
+    const parts = arg.split("+");
+    const name = parts.pop();
+    const bits = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
+    const modifiers = parts.reduce((sum, mod) => {
+      if (!(mod in bits)) throw new Error(`unknown modifier: ${mod}`);
+      return sum | bits[mod];
+    }, 0);
+    const named = { Enter: 13, Escape: 27, Tab: 9, Backspace: 8 };
+    let key;
+    if (name in named) key = { key: name, code: name, windowsVirtualKeyCode: named[name] };
+    else if (/^[a-z]$/i.test(name)) key = { key: name.toLowerCase(), code: `Key${name.toUpperCase()}`, windowsVirtualKeyCode: name.toUpperCase().charCodeAt(0) };
+    else throw new Error(`unknown key: ${name}`);
+    const text = name === "Enter" ? "\r" : modifiers === 0 && key.key.length === 1 ? key.key : undefined;
+    await cdp.send("Input.dispatchKeyEvent", { type: "rawKeyDown", modifiers, ...key, ...(text ? { text } : {}) });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", modifiers, ...key });
     console.log(`pressed ${arg}`);
   } else if (command === "shot") {
     const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
