@@ -140,9 +140,9 @@ with open(sys.argv[1], "rb") as source:
                 self.assertIn('--omarchy-font:"Fixture Mono";', css)
                 self.assertIn('--omarchy-radius:12px;', css)
                 self.assertIn('--omarchy-border-width:3px;', css)
-                # Focus is found with the form inside the composer card (current T3 Code), and the
-                # card's glass fill takes the frame's corners (Hyprland rounding is 12px here).
-                self.assertIn('[data-slot="composer-host"]:focus-within::after', css)
+                # The card's glass fill takes the frame's corners (Hyprland rounding is 12px here),
+                # and focus keeps the plain frame.
+                self.assertNotIn(":focus-within", css)
                 self.assertIn("--chat-composer-attached-outline:var(--omarchy-inactive-border)!important", css)
                 self.assertRegex(css, r'\[data-slot="composer-shell"\]::before[^{]*\{border-radius:var\(--omarchy-radius\)')
                 if style in ("full", "max"):
