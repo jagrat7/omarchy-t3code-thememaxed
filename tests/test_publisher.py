@@ -4,7 +4,6 @@ import base64
 import importlib.machinery
 import importlib.util
 import json
-import math
 import re
 import shlex
 import shutil
@@ -18,7 +17,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PUBLISHER = ROOT / "bin/t3code-omarchy-plus"
 MAGICK = shutil.which("magick")
-AVIFENC = shutil.which("avifenc")
 
 
 @unittest.skipUnless(MAGICK, "needs ImageMagick with AVIF support")
@@ -44,7 +42,6 @@ class Publisher(unittest.TestCase):
         self.target = self.home / ".t3/userdata/themes/omarchy-plus.json"
         self.target.parent.mkdir(parents=True)
         self.status = self.home / "state/omarchy-t3code-plus/status.json"
-        self.cache = self.status.with_name("sharp-cache.json")
         self.config = self.home / "config/omarchy-t3code-plus/config.toml"
         self.config.parent.mkdir(parents=True)
         self.log = self.home / "commands.log"
@@ -80,8 +77,6 @@ with open(sys.argv[1], "rb") as source:
 ' "$2"
 """)
         self.tool("magick", f'exec {shlex.quote(MAGICK)} "$@"')
-        if AVIFENC:
-            self.tool("avifenc", f'exec {shlex.quote(AVIFENC)} "$@"')
         self.tool("nice", "exit 0")
         self.walls = []
         for index, color in enumerate(("#90b0d0", "#d09050", "#509070", "#905070")):
@@ -117,8 +112,13 @@ with open(sys.argv[1], "rb") as source:
         self.assertEqual(status["theme"], "fixture")
         self.assertIsInstance(status["time"], int)
         self.assertIn("backdropTint", status)
-        self.assertIn("rendering", status)
         return css, status
+
+    def background(self):
+        """The background image file published beside the theme, if exactly one; fails on more."""
+        found = [path for path in self.target.parent.iterdir() if path.stem == "omarchy-plus" and path.suffix != ".json"]
+        self.assertLessEqual(len(found), 1, found)
+        return found[0] if found else None
 
     def one_wallpaper(self):
         for path in self.walls[1:]:
@@ -130,15 +130,17 @@ with open(sys.argv[1], "rb") as source:
             with self.subTest(style=style):
                 self.publish("--style", style)
                 css, status = self.output(style)
-                self.assertIn('data:image/avif;base64,', css)
+                self.assertEqual('data:image/avif;base64,' in css, style != "full-alt")
                 self.assertEqual("--omarchy-header-wallpaper:" in css, style != "full-alt")
-                self.assertEqual("--omarchy-wallpaper:" in css, style != "minimal")
+                self.assertEqual("--omarchy-wallpaper:" in css, style in ("full", "max"))
+                self.assertEqual("var(--theme-background-image,none)" in css, style == "full-alt")
+                self.assertEqual(self.background(), (self.target.with_suffix(".png") if style == "full-alt" else None))
                 self.assertEqual("100% 100%,cover" in css, style == "max")
                 self.assertEqual("backdrop-filter:blur(" in css, style == "full-alt")
                 self.assertIn('--omarchy-font:"Fixture Mono";', css)
                 self.assertIn('--omarchy-radius:12px;', css)
                 self.assertIn('--omarchy-border-width:3px;', css)
-                if style != "minimal":
+                if style in ("full", "max"):
                     data = base64.b64decode(re.search(r'--omarchy-wallpaper:url\("data:image/avif;base64,([^"]+)', css)[1])
                     size = subprocess.run([MAGICK, "identify", "-format", "%w %h", "-"], input=data,
                                           env=self.env, capture_output=True, check=True).stdout
@@ -209,121 +211,50 @@ with open(sys.argv[1], "rb") as source:
         self.assertNotIn("css", theme)
         self.assertIn("over T3 Code's 50000 limit", json.loads(self.status.read_text())["warning"])
 
-    @unittest.skipUnless(AVIFENC, "needs avifenc")
-    def test_full_alt_cache_warm_and_image_changes(self):
-        self.one_wallpaper()
-        self.publish("--style", "full-alt", "--tint", "0.3")
-        css, status = self.output("full-alt")
-        self.assertEqual(status["picture"]["format"], "avif")
-        self.assertEqual(status["tint"], 0.3)
-        self.assertIn("avifenc", self.log.read_text())
-        self.assertNotIn("-blur", self.log.read_text())
-        self.assertNotIn("-function", self.log.read_text())
-        self.log.write_text("")
-        self.publish()
-        self.assertEqual(self.output("full-alt")[0], css)
-        self.assertNotIn("avifenc", self.log.read_text())
-        self.walls[1].write_bytes(self.walls[0].read_bytes())
-        self.publish()
-        previous = self.target.read_bytes(), self.status.read_bytes()
-        self.publish("--warm")
-        self.assertIn("nice\n-n 19", self.log.read_text())
-        self.assertEqual((self.target.read_bytes(), self.status.read_bytes()), previous)
-        self.assertEqual(len(json.loads(self.cache.read_text())), 2)
-        self.log.write_text("")
-        self.publish()
-        self.output("full-alt")
-        self.assertNotIn("avifenc", self.log.read_text())
-        self.walls[0].write_bytes(self.walls[0].read_bytes() + b"\n")
-        self.publish()
-        self.output("full-alt")
-        self.assertIn("avifenc", self.log.read_text())
-
-    @unittest.skipUnless(AVIFENC, "needs avifenc")
-    def test_full_alt_shows_a_skeleton_while_its_picture_encodes(self):
-        self.one_wallpaper()
-        during = self.home / "during.json"
-        self.tool("avifenc", f'[ -e {shlex.quote(str(during))} ] || {shutil.which("cp")} {shlex.quote(str(self.target))} {shlex.quote(str(during))}\n'
-                             f'exec {shlex.quote(AVIFENC)} "$@"')
+    def test_full_alt_publishes_the_wallpaper_file_beside_the_theme(self):
+        stale = self.target.with_suffix(".webp")
+        stale.write_bytes(b"left by an older publish")
         self.publish("--style", "full-alt")
-        loading = json.loads(during.read_text())["css"]
-        self.assertIn("@keyframes omarchy-skeleton", loading)
-        self.assertRegex(loading, r"--omarchy-wallpaper:url\(\"data:image/avif;base64,")
-        css, _ = self.output("full-alt")
-        self.assertNotIn("omarchy-skeleton", css)
+        css, status = self.output("full-alt")
+        shown = Path(status["wallpaper"])
+        background = self.background()
+        self.assertEqual(background, self.target.with_suffix(".png"))
+        self.assertFalse(background.is_symlink())
+        self.assertEqual(background.read_bytes(), shown.read_bytes())
+        self.assertEqual(status["picture"], {"format": "png", "bytes": shown.stat().st_size, "width": 160, "height": 90})
+        self.assertNotIn("data:image", css)
+        self.assertNotIn("avifenc", self.log.read_text())
         # The frosted glass follows the chat column, wherever T3 Code puts it.
         self.assertIn("anchor-name:--omarchy-chat-lane", css)
         self.assertIn("anchor(--omarchy-chat-lane left", css)
-        during.unlink()
+
+        # A new tint leaves the file alone: a rewrite would make T3 Code download it again.
+        before = background.stat()
+        self.publish("--tint", "0.4")
+        after = background.stat()
+        self.assertEqual((after.st_ino, after.st_mtime_ns), (before.st_ino, before.st_mtime_ns))
+
         self.publish()
-        self.assertFalse(during.exists())
-        self.assertNotIn("omarchy-skeleton", self.output("full-alt")[0])
+        dealt = Path(self.output("full-alt")[1]["wallpaper"])
+        self.assertNotEqual(dealt, shown)
+        self.assertEqual(self.background().read_bytes(), dealt.read_bytes())
+
         self.publish("--style", "full")
-        self.assertNotIn("omarchy-skeleton", self.output("full")[0])
+        self.assertIsNone(self.background())
 
-    @unittest.skipUnless(AVIFENC, "needs avifenc")
-    def test_sharp_cache_adapts_to_a_smaller_css_budget(self):
+    def test_full_alt_converts_a_wallpaper_t3_code_cannot_take(self):
         self.one_wallpaper()
-        subprocess.run([MAGICK, "-size", "320x180", "xc:", "-seed", "7", "+noise", "Random", str(self.walls[0])],
-                       env=self.env, check=True, capture_output=True)
-        self.publish("--style", "full-alt")
-        css, first = self.output("full-alt")
-        self.assertGreater(len(css), 40000)
-        self.tool("fc-match", "printf '%s' '" + "F" * 3000 + "'")
-        self.publish()
-        _, smaller = self.output("full-alt")
-        self.assertLess(smaller["quality"], first["quality"])
-        self.assertLess(smaller["picture"]["bytes"], first["picture"]["bytes"])
-
-    @unittest.skipUnless(AVIFENC, "needs avifenc")
-    def test_pixel_art_keeps_native_pixels_and_fallback_works_without_avifenc(self):
-        self.one_wallpaper()
-        subprocess.run([MAGICK, "-size", "16x9", "pattern:checkerboard", "-sample", "160x90!", str(self.walls[0])],
-                       env=self.env, check=True, capture_output=True)
+        bitmap = self.walls[0].with_suffix(".bmp")
+        subprocess.run([MAGICK, str(self.walls[0]), str(bitmap)], env=self.env, check=True, capture_output=True)
+        self.walls[0].unlink()
         self.publish("--style", "full-alt")
         _, status = self.output("full-alt")
-        self.assertEqual(status["rendering"], "pixelated")
+        background = self.background()
+        self.assertEqual(background, self.target.with_suffix(".webp"))
+        size = subprocess.run([MAGICK, "identify", "-format", "%m %w %h", str(background)],
+                              env=self.env, capture_output=True, check=True).stdout
+        self.assertEqual(size, b"WEBP 160 90")
         self.assertEqual(status["picture"]["format"], "webp")
-        self.assertEqual((status["picture"]["width"], status["picture"]["height"]), (16, 9))
-        (self.bin / "avifenc").unlink()
-        self.publish()
-        _, status = self.output("full-alt")
-        self.assertEqual(status["picture"]["format"], "avif")
-        self.assertEqual(status["rendering"], "auto")
-
-
-class SharpSearch(unittest.TestCase):
-    def test_search_matches_exhaustive_choice_and_reuses_measured_levels(self):
-        loader = importlib.machinery.SourceFileLoader("publisher", str(PUBLISHER))
-        publisher = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
-        loader.exec_module(publisher)
-        widths = [1920, 1600, 1280, 960]
-
-        def size(width, quality):
-            return int(900 * (width / 960) ** 1.7 * math.exp(0.07 * publisher.avif_level(quality)))
-
-        for room in range(1500, 60000, 1700):
-            with self.subTest(room=room):
-                measured, sizes = [], {}
-
-                def measure(pairs):
-                    measured.extend(pairs)
-                    return [size(*pair) for pair in pairs]
-
-                def sketch(width):
-                    return {q: int(size(width, q) * 1.2) for q in publisher.SHARP_SKETCH_QUALITIES}
-
-                chosen = publisher.sharp_search(sizes, room, widths, 20, 90, measure, sketch)
-                width = next((w for w in widths if size(w, 20) <= room), widths[-1])
-                qualities = [q for q in range(91) if size(width, q) <= room]
-                expected = (width, publisher.avif_level(max(qualities))) if qualities else None
-                self.assertEqual(chosen and (chosen[0], publisher.avif_level(chosen[1])), expected)
-                self.assertLess(len(measured), 12)
-                levels = [(w, publisher.avif_level(q)) for w, q in measured]
-                self.assertEqual(len(levels), len(set(levels)))
-                measured.clear()
-                self.assertEqual(publisher.sharp_search(sizes, room, widths, 20, 90, measure, sketch), chosen)
-                self.assertEqual(measured, [])
 
 
 if __name__ == "__main__":

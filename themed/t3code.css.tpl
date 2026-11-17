@@ -184,9 +184,11 @@
 /* Wallpaper. The publisher supplies two pictures, blurred and tinted with
    floors that keep text readable: --omarchy-header-wallpaper is the
    theme's first wallpaper, --omarchy-wallpaper a random one of the theme's.
+   full-alt instead shows a random one whole, as the theme's background
+   image (--theme-background-image, from a file beside the theme).
    The chosen style keeps some of the @part blocks below: minimal keeps the
    header, full adds the background, max adds the sidebar, and full-alt
-   keeps only its own, plus the loading one until its picture is ready. */
+   keeps only its own. */
 
 /* @part header (minimal, full, max): the theme's first wallpaper sits behind the sidebar's
    header row. The picture is scaled to the sidebar's width and the row shows
@@ -251,22 +253,19 @@
 }
 /* @end */
 
-/* @part backdrop (full-alt): the desktop wallpaper as a scene behind the
-   conversation, sharp at the sides. The chat column is frosted glass: the
+/* @part backdrop (full-alt): a theme wallpaper at full size as a scene behind
+   the conversation, sharp at the sides. T3 Code 0.1.10 and later serve it from
+   the file beside the theme as --theme-background-image; until it has loaded,
+   or in an older T3 Code, the theme's ground shows instead. The chat column is frosted glass: the
    picture behind it blurred and tinted only as much as the wallpaper's
    brightness needs, fading out at its edges. The glass sits behind the
    messages, between the conversation's background and its content. */
 [data-workspace-area="conversation"] {
   background:
     linear-gradient(var(--omarchy-scene-edge), var(--omarchy-scene-edge)),
-    var(--omarchy-wallpaper) center / cover no-repeat,
+    var(--theme-background-image, none) center / cover no-repeat,
     {{ background }} !important;
-  image-rendering: var(--omarchy-wallpaper-rendering);
   isolation: isolate;
-}
-
-[data-workspace-area="conversation"] > * {
-  image-rendering: auto;
 }
 
 [data-workspace-area="conversation"]::before {
@@ -309,7 +308,7 @@
   background:
     radial-gradient(45% 40% at 50% 50%, var(--omarchy-scene-tint), transparent),
     linear-gradient(var(--omarchy-scene-edge), var(--omarchy-scene-edge)),
-    var(--omarchy-wallpaper) center / cover no-repeat,
+    var(--theme-background-image, none) center / cover no-repeat,
     {{ background }} !important;
 }
 
@@ -331,33 +330,6 @@
   --glass-blur: 0px !important;
   --glass-opacity: 100% !important;
   --chat-composer-glass-surface: var(--omarchy-scene-card) !important;
-}
-/* @end */
-
-/* @part loading (full-alt, while its sharp picture is encoded): a small copy
-   of the picture stands in, with a skeleton shimmer sweeping across it. The
-   sweep stops on its own after a minute and a half, should the sharp
-   picture never come. */
-[data-workspace-area="conversation"]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(100deg, transparent 35%, color-mix(in srgb, {{ foreground }} 10%, transparent) 50%, transparent 65%) 0 0 / 250% 100% no-repeat;
-  animation: omarchy-skeleton 1.6s ease-in-out 56;
-  pointer-events: none;
-}
-
-@keyframes omarchy-skeleton {
-  from { background-position: 100% 0; }
-  to { background-position: 0 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-workspace-area="conversation"]::after {
-    animation: none;
-    background: color-mix(in srgb, {{ foreground }} 6%, transparent);
-  }
 }
 /* @end */
 

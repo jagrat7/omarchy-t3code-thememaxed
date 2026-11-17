@@ -10,11 +10,9 @@ import base64
 import fcntl
 import functools
 import json
-import math
 import os
 import random
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,40 +38,15 @@ LOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "t3code-omarchy-plus.
 CSS_LIMIT = 50000
 BACKGROUND_STEPS = ((960, 45), (640, 45), (640, 30), (480, 30), (320, 30))
 HEADER_STEPS = ((640, 45), (480, 40), (480, 30), (320, 30), (240, 30))
-# The full-alt style shows its one wallpaper sharp behind the conversation,
-# so it has all the room to itself. avifenc (10-bit, slow, tuned for SSIM)
-# packs far more detail into that room than ImageMagick, so it is used when
-# installed: the widest picture that holds SHARP_GOOD_QUALITY within the room,
-# at the best quality that still fits. Without it, the first of SHARP_STEPS
-# that fits.
-SHARP_WIDTHS = (2560, 1920, 1600, 1280, 960)
-SHARP_GOOD_QUALITY = 20
-SHARP_STEPS = (
-    (2560, 35), (1920, 35), (1600, 35), (1600, 25), (1280, 30), (1280, 20), (960, 25), (960, 15), (640, 20),
-)
-SHARP_TOP_QUALITY = 90
-SHARP_ENCODER = ("-s", "4", "-d", "10", "-y", "420", "-a", "tune=ssim")
-# Each of those encodes takes most of a second, so the search aims them: a
-# quick sketch at a fast speed shows how the picture grows with quality, its
-# sizes times SHARP_SKETCH_RATIO (about what the slow encoder saves) guess
-# where the room runs out, and slow encodes check the guess, each one sharpening
-# the next. A picture grows with its width to the power SHARP_WIDTH_POWER, and
-# by about SHARP_LEVEL_GROWTH (as a natural log) for each of avifenc's levels.
-SHARP_SKETCH = ("-s", "6", "-d", "10", "-y", "420", "-a", "tune=ssim")
-SHARP_SKETCH_QUALITIES = (5, 20, 45, 70)
-SHARP_SKETCH_RATIO = 0.85
-SHARP_WIDTH_POWER = 1.6
-SHARP_LEVEL_GROWTH = 0.065
-SHARP_CACHE = STATUS.parent / "sharp-cache.json"
-SHARP_CACHE_ENTRIES = 32
-# While that runs, full-alt shows this small, quick picture under a shimmer.
-LOADING_STEPS = ((96, 40),)
-WARM_LOCK = LOCK.with_name("t3code-omarchy-plus-warm.lock")
-# Pixel art drawn at a whole-number scale (each art pixel a block of screen
-# pixels) is sent at its own size and scaled up by T3 Code with hard edges,
-# which keeps it crisp in a fraction of the room. Blocks up to this size are
-# looked for.
-PIXEL_ART_MAX_BLOCK = 16
+# full-alt shows its wallpaper as the theme's background image: a file beside
+# the theme file that T3 Code (0.1.10 and later) serves as
+# --theme-background-image, so the picture is the wallpaper itself, at full
+# size. T3 Code takes these formats, an earlier one winning when several are
+# there, up to BACKGROUND_MAX_BYTES. Any other wallpaper is converted to WebP
+# no wider than BACKGROUND_MAX_WIDTH.
+BACKGROUND_FORMATS = ("webp", "png", "jpg", "jpeg")
+BACKGROUND_MAX_BYTES = 16 * 1024 * 1024
+BACKGROUND_MAX_WIDTH = 3840
 
 STYLES = {
     "minimal": {"header"},
@@ -439,340 +412,6 @@ def picture_size(source):
     return (int(size[0]), int(size[1])) if len(size) == 2 and all(n.isdigit() for n in size) else None
 
 
-def pixel_block(source, width, height):
-    """The side of the square each pixel of pixel art is drawn as, or 1 for any other picture."""
-    # The share of pixels that may differ, for a signature or a stray mark.
-    tolerance = 0.0002
-
-    def mismatch(block, rows):
-        """The share of the top `rows` rows that differ once shrunk to one pixel per block and grown back."""
-        crop = ["-crop", f"{width}x{rows}+0+0", "+repage"] if rows < height else []
-        command = [
-            "magick", f"{source}[0]", *crop, "(", "+clone", "-sample", f"{width // block}x{rows // block}!",
-            "-sample", f"{width}x{rows}!", ")", "-fuzz", "1%", "-metric", "AE", "-compare",
-            "-format", "%[distortion]", "info:",
-        ]
-        try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=20)
-            return float(result.stdout) if result.returncode == 0 else None
-        except (OSError, subprocess.TimeoutExpired, ValueError):
-            return None
-
-    def exact(block):
-        # An eighth of the picture first, a fifth of the work: any picture
-        # within the tolerance whole is within it scaled up to the eighth, so
-        # one that fails there is not pixel art and most photos stop there.
-        rows = max(block, height // 8 // block * block)
-        part = mismatch(block, rows)
-        if part is None or part > tolerance * height / rows:
-            return False
-        whole = part if rows == height else mismatch(block, height)
-        return whole is not None and whole <= tolerance
-
-    blocks = [block for block in range(2, PIXEL_ART_MAX_BLOCK + 1) if width % block == 0 and height % block == 0]
-    # Art drawn in blocks of n is also drawn in blocks of each factor of n, so
-    # a picture that no prime passes is not pixel art; most pictures stop here.
-    primes = [block for block in blocks if all(block % factor for factor in range(2, block))]
-    on_primes = in_parallel(exact, primes)
-    if not any(on_primes):
-        return 1
-    others = [block for block in blocks if block not in primes]
-    passed = [block for block, ok in zip(primes + others, on_primes + in_parallel(exact, others)) if ok]
-    return max(passed, default=1)
-
-
-def avif_level(quality):
-    """How finely avifenc -q `quality` encodes, 0 to 63.
-
-    avifenc rounds the quality to one of 64 quantizers, so qualities of the
-    same level make the same file.
-    """
-    return 63 - ((100 - quality) * 63 + 50) // 100
-
-
-def sharp_known(sizes, room, width, quality):
-    """Whether (width, quality) fits in `room`, as far as the encodes in `sizes` tell, or None.
-
-    A picture grows with its width and level, so one that fits vouches for
-    every narrower and coarser one, and one that does not for every wider and
-    finer.
-    """
-    level = avif_level(quality)
-    if any(w >= width and avif_level(q) >= level and n <= room for (w, q), n in sizes.items()):
-        return True
-    if any(w <= width and avif_level(q) <= level and n > room for (w, q), n in sizes.items()):
-        return False
-    return None
-
-
-def sharp_choice(sizes, room, widths, good, top, estimate):
-    """Choose the widest image holding `good`, then its best quality up to `top`.
-
-    Fall back to the narrowest below `good`. Return the choice (or None) and
-    the unmeasured pairs needed to confirm it, using `estimate` for unknown sizes.
-    """
-    measured = {(width, avif_level(quality)): length for (width, quality), length in sizes.items()}
-
-    def known(width, quality):
-        return sharp_known(sizes, room, width, quality)
-
-    def fits(width, quality):
-        answer = known(width, quality)
-        return estimate(width, quality) <= room if answer is None else answer
-
-    holds = next((width for width in widths if fits(width, good)), None)
-    width = holds or widths[-1]
-    low, high = (good, top) if holds else (0, good - 1)
-    quality = next((q for q in range(high, low - 1, -1) if fits(width, q)), None)
-    # That one quality more does not fit, and the next wider picture does not hold `good`.
-    checks = [(width, quality + 1)] if quality is not None and quality < high else []
-    checks += [(width, low)] if quality is None else []
-    if width != widths[0] or not holds:
-        checks.append((widths[widths.index(width) - 1] if holds else width, good))
-    needed = [pair for pair in dict.fromkeys(checks) if known(*pair) is None]
-    if quality is not None and (width, avif_level(quality)) not in measured:
-        needed.insert(0, (width, quality))
-    return (width, quality) if quality is not None else None, needed
-
-
-def sharp_estimate(sizes, sketch, widths):
-    """estimate(width, quality): the bytes sharp_choice should expect, from what was encoded.
-
-    `sketch` maps qualities to the bytes of quick encodes at widths[0].
-    """
-    sketch = {avif_level(quality): length for quality, length in sketch.items()}
-
-    def along(points, level):
-        # Bytes grow about exponentially with the level: a straight line in
-        # log space through the two points around `level`, or nearest to it.
-        if len(points) < 2:
-            anchor, length = next(iter(points.items()), (0, 1))
-            return length * math.exp(SHARP_LEVEL_GROWTH * (level - anchor))
-        levels = sorted(points)
-        index = min(max(sum(l <= level for l in levels), 1), len(levels) - 1)
-        a, b = levels[index - 1], levels[index]
-        share = (level - a) / (b - a)
-        return points[a] ** (1 - share) * points[b] ** share
-
-    def estimate(width, quality):
-        level = avif_level(quality)
-        same = {avif_level(q): n for (w, q), n in sizes.items() if w == width}
-        below = [l for l in same if l <= level]
-        above = [l for l in same if l >= level]
-        if below and above:
-            return along({l: same[l] for l in (max(below), min(above))}, level)
-        if same:
-            # Shaped like the sketch, through the nearest encode.
-            anchor = max(below) if below else min(above)
-            return same[anchor] * along(sketch, level) / along(sketch, anchor)
-        if sizes:
-            near = min({w for w, _ in sizes}, key=lambda w: abs(w - width))
-            return estimate(near, quality) * (width / near) ** SHARP_WIDTH_POWER
-        return along(sketch, level) * SHARP_SKETCH_RATIO * (width / widths[0]) ** SHARP_WIDTH_POWER
-
-    return estimate
-
-
-def sharp_search(sizes, room, widths, good, top, measure, sketch):
-    """Encode until sharp_choice is sure, adding to `sizes`; its answer, or None.
-
-    measure(pairs) encodes (width, quality) pairs side by side and returns
-    their bytes (None for a failure); sketch(width) returns the bytes of quick
-    encodes at a few qualities, as sharp_estimate takes them.
-    """
-    guide = {}
-    while True:
-        first = not guide and not any(width in widths for width, _ in sizes)
-        if first:
-            # A wallpaper never measured: sketch it, then encode where the
-            # sketch says the room runs out, alone, to learn how far off the
-            # sketch is before encoding around it.
-            guide = sketch(widths[0]) or {SHARP_GOOD_QUALITY: 1}
-        chosen, needed = sharp_choice(sizes, room, widths, good, top, sharp_estimate(sizes, guide, widths))
-        if not needed:
-            return chosen
-        if first:
-            needed = needed[:1]
-        lengths = measure(needed)
-        if None in lengths:
-            return None
-        sizes.update(zip(needed, lengths))
-
-
-def sharp_cache_key(source):
-    """What the sharp picture of `source` depends on, as a string, or None."""
-    try:
-        stat = Path(source).stat()
-    except OSError:
-        return None
-    tools = [shutil.which(tool) for tool in ("avifenc", "magick")]
-    recipe = [
-        SHARP_ENCODER, SHARP_WIDTHS, SHARP_GOOD_QUALITY, SHARP_TOP_QUALITY, PIXEL_ART_MAX_BLOCK, [os.stat(tool).st_mtime_ns if tool else 0 for tool in tools],
-    ]
-    return json.dumps([str(source), stat.st_mtime_ns, stat.st_size, recipe])
-
-
-def read_sharp_cache():
-    try:
-        entries = json.loads(SHARP_CACHE.read_text())
-        return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
-    except (OSError, ValueError):
-        return []
-
-
-def write_sharp_cache(entry):
-    """Keep `entry` first in SHARP_CACHE, before the most recent others."""
-    entries = [entry] + [old for old in read_sharp_cache() if old.get("key") != entry["key"]]
-    try:
-        write_json(SHARP_CACHE, entries[:SHARP_CACHE_ENTRIES], indent=None)
-    except OSError:
-        pass
-
-
-def sharp_wallpaper_css(source, budget):
-    """The wallpaper unblurred but for its middle, as large and clean as `budget` characters allow.
-
-    Returns the CSS image ("none" without one) and how T3 Code should scale it
-    up: "pixelated" for pixel art, otherwise "auto".
-    """
-    if source is None:
-        return "none", "auto"
-    if not shutil.which("avifenc"):
-        return wallpaper_css(source, budget, SHARP_STEPS), "auto"
-    key = sharp_cache_key(source)
-    entry = next((old for old in read_sharp_cache() if key and old.get("key") == key), None) or {}
-    entry = {
-        "key": key,
-        "size": entry.get("size") or picture_size(source),
-        "block": entry.get("block"),
-        "sizes": entry.get("sizes", {}),
-        "webp": entry.get("webp"),
-        "picture": entry.get("picture"),
-    }
-    if entry["size"] is None:
-        return "none", "auto"
-    size = entry["size"]
-    # (width, quality): bytes, of every encode measured for this wallpaper.
-    sizes = {}
-    for pair, length in entry["sizes"].items():
-        width, _, quality = pair.partition("x")
-        sizes[int(width), int(quality)] = length
-    encoded = {}
-    if entry["picture"]:
-        width, quality, data = entry["picture"]
-        encoded[width, quality] = base64.b64decode(data)
-
-    def as_css(kind, data, width=None):
-        if width is not None:
-            REPORT["picture"] = {
-                "format": kind, "bytes": len(data), "width": width,
-                "height": round(size[1] * width / size[0]),
-            }
-        return f'url("data:image/{kind};base64,{base64.b64encode(data).decode()}")'
-
-    def room(kind):
-        return (budget - len(as_css(kind, b""))) * 3 // 4
-
-    with tempfile.TemporaryDirectory() as folder:
-        pngs = {}
-
-        def picture(width, sample=None):
-            """The wallpaper at `width` as an uncompressed PNG, or None."""
-            sample = entry["block"] > 1 if sample is None else sample
-            if (width, sample) in pngs:
-                return pngs[width, sample]
-            height = round(size[1] * width / size[0])
-            png = Path(folder) / f"{width}{'p' if sample else ''}.png"
-            # -sample keeps pixel art's hard edges; photos are resized smoothly.
-            command = ["magick", f"{source}[0]", "-sample" if sample else "-resize", f"{width}x{height}!", "-strip"]
-            try:
-                # Uncompressed: zlib would take most of the time, and avifenc reads it once.
-                result = subprocess.run([*command, "-define", "png:compression-level=0", str(png)], capture_output=True, timeout=30)
-            except (OSError, subprocess.TimeoutExpired):
-                result = None
-            pngs[width, sample] = png if result and result.returncode == 0 else None
-            return pngs[width, sample]
-
-        def encode(width, quality, settings=SHARP_ENCODER):
-            png = picture(width)
-            out = Path(folder) / f"{width}-{quality}-{settings[1]}.avif"
-            if png is None:
-                return None
-            try:
-                result = subprocess.run(["avifenc", "-q", str(quality), *settings, str(png), str(out)], capture_output=True, timeout=60)
-            except (OSError, subprocess.TimeoutExpired):
-                return None
-            return out.read_bytes() if result.returncode == 0 and out.is_file() else None
-
-        def measure(pairs):
-            in_parallel(picture, {width for width, _ in pairs})
-            lengths = []
-            for pair, data in zip(pairs, in_parallel(lambda pair: encode(*pair), pairs)):
-                if data is not None:
-                    encoded[pair] = data
-                lengths.append(len(data) if data else None)
-            return lengths
-
-        def sketch(width):
-            picture(width)
-            lengths = in_parallel(lambda quality: encode(width, quality, SHARP_SKETCH), SHARP_SKETCH_QUALITIES)
-            return {quality: len(data) for quality, data in zip(SHARP_SKETCH_QUALITIES, lengths) if data}
-
-        def search(widths, good, top):
-            """The best (width, quality) and its AVIF, as sharp_choice says, or None."""
-            chosen = sharp_search(sizes, room("avif"), widths, good, top, measure, sketch)
-            if chosen is None:
-                return None
-            same = [data for (w, q), data in encoded.items() if w == chosen[0] and avif_level(q) == avif_level(chosen[1])]
-            data = same[0] if same else encode(*chosen)
-            if data is None or len(data) > room("avif"):
-                return None
-            entry["picture"] = [*chosen, base64.b64encode(data).decode()]
-            REPORT["quality"] = chosen[1]
-            return data
-
-        def result():
-            if entry["block"] is None:
-                # Pixel art is rare, so the widest picture is prepared for a
-                # photo while the wallpaper is checked.
-                widest = min(SHARP_WIDTHS[0], size[0])
-                entry["block"], _ = in_parallel(lambda job: job(), [
-                    lambda: pixel_block(source, *size), lambda: picture(widest, sample=False),
-                ])
-            if entry["block"] > 1:
-                # Pixel art at its own size: whole when lossless WebP fits, which
-                # keeps every pixel exact, otherwise the best AVIF that fits.
-                native = size[0] // entry["block"]
-                if entry["webp"] is None:
-                    png = picture(native)
-                    if png is None:
-                        return "none", "auto"
-                    try:
-                        webp = subprocess.run(
-                            ["magick", str(png), "-define", "webp:lossless=true", "-define", "webp:method=6", "webp:-"],
-                            capture_output=True, timeout=30,
-                        ).stdout
-                    except (OSError, subprocess.TimeoutExpired):
-                        webp = b""
-                    entry["webp"] = base64.b64encode(webp).decode()
-                webp = base64.b64decode(entry["webp"])
-                if webp and len(webp) <= room("webp"):
-                    return as_css("webp", webp, native), "pixelated"
-                data = search([native], 0, 95)
-                if data:
-                    return as_css("avif", data, native), "pixelated"
-            # Never wider than the picture itself.
-            widths = list(dict.fromkeys(min(width, size[0]) for width in SHARP_WIDTHS))
-            data = search(widths, SHARP_GOOD_QUALITY, SHARP_TOP_QUALITY)
-            return (as_css("avif", data, entry["picture"][0]), "auto") if data else ("none", "auto")
-
-        css = result()
-    if key:
-        entry["sizes"] = {f"{width}x{quality}": length for (width, quality), length in sizes.items()}
-        write_sharp_cache(entry)
-    return css
-
-
 def wallpaper_css(source, budget, steps, min_blur=None):
     """The wallpaper as a CSS image of at most `budget` characters, or "none".
 
@@ -936,6 +575,64 @@ def write_json(path, data, indent=2):
         raise
 
 
+def write_bytes(path, data):
+    """Write `data` to `path` in one step, so a watcher never reads half a file."""
+    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(handle, "wb") as file:
+            file.write(data)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def background_picture(source):
+    """`source` as T3 Code takes a theme background: (format, bytes), or None.
+
+    A JPEG, PNG or WebP within the size limit is used as it is; anything else
+    is converted to WebP.
+    """
+    kind = source.suffix.lower().lstrip(".")
+    try:
+        if kind in BACKGROUND_FORMATS and source.stat().st_size <= BACKGROUND_MAX_BYTES:
+            return kind, source.read_bytes()
+        data = subprocess.run(
+            ["magick", f"{source}[0]", "-resize", f"{BACKGROUND_MAX_WIDTH}x>", "-quality", "90", "webp:-"],
+            capture_output=True, timeout=60,
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return ("webp", data) if data and len(data) <= BACKGROUND_MAX_BYTES else None
+
+
+def publish_background(source):
+    """Put `source` beside the theme as its background image, or remove it when None.
+
+    An unchanged picture is not written again: a new file is a new revision,
+    which T3 Code downloads again, with no picture while it does.
+    """
+    picture = background_picture(source) if source else None
+    if source and picture is None:
+        warn(f"could not use {source.name} as T3 Code's background image.")
+    keep = TARGET.with_suffix(f".{picture[0]}") if picture else None
+    # T3 Code takes the first format it finds, so no other may be left there.
+    for path in (TARGET.with_suffix(f".{kind}") for kind in BACKGROUND_FORMATS):
+        if path != keep:
+            path.unlink(missing_ok=True)
+    if keep is None:
+        return
+    kind, data = picture
+    try:
+        same = not keep.is_symlink() and keep.read_bytes() == data
+    except OSError:
+        same = False
+    if not same:
+        write_bytes(keep, data)
+    size = picture_size(keep) or (None, None)
+    REPORT["picture"] = {"format": kind, "bytes": len(data), "width": size[0], "height": size[1]}
+
+
 def write_status(settings, published):
     """Tell the bar widget what was published."""
     status = {
@@ -953,12 +650,10 @@ def write_status(settings, published):
         pass
 
 
-def build_css(settings, inside=None, loading=False):
+def build_css(settings, inside=None):
     """The CSS with the theme's colours and the Omarchy values in, or None when it cannot be used.
 
     `inside` is the wallpaper for inside T3 Code; a random one when None.
-    With `loading`, full-alt gets a quick, small picture under a shimmer, to
-    show while its sharp one is encoded.
     """
     try:
         css = render_template(TEMPLATE.read_text(), theme_values())
@@ -968,8 +663,6 @@ def build_css(settings, inside=None, loading=False):
 
     variables = omarchy_variables(settings)
     keep = set(STYLES[settings["style"]])
-    if loading and "backdrop" in keep:
-        keep.add("loading")
     if variables["radius"] == "0px":
         keep.add("square")
     css = keep_blocks(css, keep)
@@ -1010,16 +703,7 @@ def build_css(settings, inside=None, loading=False):
     wants_background = "var(--omarchy-wallpaper)" in css
     variables["header-wallpaper"] = variables["wallpaper"] = "none"
     REPORT["picture"] = None
-    if wants_background and "loading" in keep:
-        free = CSS_LIMIT - len(with_variables())
-        variables["wallpaper"] = wallpaper_css(inside, free, LOADING_STEPS)
-        variables["wallpaper-rendering"] = "auto"
-    elif wants_background and "backdrop" in keep:
-        # Sized as if pixelated, the longer of the two renderings.
-        variables["wallpaper-rendering"] = "pixelated"
-        free = CSS_LIMIT - len(with_variables())
-        variables["wallpaper"], variables["wallpaper-rendering"] = sharp_wallpaper_css(inside, free)
-    elif wants_header or wants_background:
+    if wants_header or wants_background:
         free = CSS_LIMIT - len(with_variables())
         share = free // 2 if wants_background else free
         header_source = first_wallpaper() if wants_header else None
@@ -1034,14 +718,13 @@ def build_css(settings, inside=None, loading=False):
     css = with_variables()
     REPORT["chars"] = len(css)
     REPORT["picture"] = REPORT["picture"] or picture_report(variables["wallpaper"])
-    REPORT["rendering"] = variables.get("wallpaper-rendering", "auto")
     if len(css) > CSS_LIMIT:
         warn(f"the CSS is {len(css)} characters, over T3 Code's {CSS_LIMIT} limit; publishing the palette without it.")
         return None
     return css
 
 
-def build_theme(settings, inside=None, loading=False):
+def build_theme(settings, inside=None):
     """Omarchy's palette for T3 Code, renamed, with the CSS added; None to leave the last one."""
     # Omarchy renders this from its t3code.json.tpl (or the theme ships it).
     source = (THEME_DIR / "t3code.json").read_text()
@@ -1053,7 +736,7 @@ def build_theme(settings, inside=None, loading=False):
         raise ValueError("t3code.json is not a theme object")
     theme["name"] = THEME_NAME
     theme.pop("css", None)
-    if css := build_css(settings, inside, loading):
+    if css := build_css(settings, inside):
         theme["css"] = css
     return theme
 
@@ -1071,54 +754,17 @@ def publish(settings, keep_wallpaper=False):
     inside = None
     if STYLES[settings["style"]] & {"background", "backdrop"}:
         inside = (keep_wallpaper and kept_wallpaper()) or random_wallpaper()
-    if "backdrop" in STYLES[settings["style"]] and inside and not sharp_cached(inside):
-        # The sharp picture takes seconds to encode; show its place loading meanwhile.
-        if placeholder := build_theme(settings, inside, loading=True):
-            write_json(TARGET, placeholder)
     theme = build_theme(settings, inside)
     if theme is None:
         write_status(settings, False)
         return True
 
+    # The picture first, so the theme that shows it finds it there.
+    full_alt = "backdrop" in STYLES[settings["style"]] and "css" in theme
+    publish_background(inside if full_alt else None)
     write_json(TARGET, theme)
     write_status(settings, True)
-    if "backdrop" in STYLES[settings["style"]] and uncached_wallpapers():
-        try:
-            subprocess.Popen(
-                ["nice", "-n", "19", sys.executable, __file__, "--warm"],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except OSError:
-            pass
     return True
-
-
-def sharp_cached(path):
-    """Whether full-alt's picture of `path` is already encoded."""
-    key = shutil.which("avifenc") and sharp_cache_key(path)
-    return bool(key) and any(entry.get("key") == key and entry.get("picture") for entry in read_sharp_cache())
-
-
-def uncached_wallpapers():
-    """The theme's wallpapers that full-alt has not encoded yet."""
-    if not shutil.which("avifenc"):
-        return []
-    cached = {entry.get("key") for entry in read_sharp_cache()}
-    return [path for path in (p.resolve() for p in theme_wallpapers()) if sharp_cache_key(path) not in cached]
-
-
-def warm(settings):
-    """Encode full-alt's picture of each of the theme's wallpapers not cached yet, one at a time."""
-    try:
-        lock = open(WARM_LOCK, "w")
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return
-    with lock:
-        settings = {**settings, "style": "full-alt"}
-        for path in uncached_wallpapers():
-            build_css(settings, inside=path)
 
 
 def main():
@@ -1128,18 +774,14 @@ def main():
         choices=list(STYLES),
         help="switch style and remember it: minimal (header), full (header and "
         "conversation background), max (the sidebar as well) or full-alt "
-        "(a sharp wallpaper behind a frosted chat column)",
+        "(the wallpaper at full size behind a frosted chat column)",
     )
     parser.add_argument(
         "--tint",
         type=tint_value,
         help='set and remember the full-alt tint: "auto" (from the wallpaper\'s brightness) or 0 to 1',
     )
-    parser.add_argument("--warm", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if args.warm:
-        warm(load_settings())
-        return 0
     try:
         if args.style or not CONFIG.exists():
             save_setting("style", f'"{args.style or DEFAULT_STYLE}"')
