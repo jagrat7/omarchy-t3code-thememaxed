@@ -1,6 +1,6 @@
 ---
 name: verify-thememaxed
-description: Prove a T3 Code Thememaxed change in the real T3 Code app. Launches a sandboxed, hidden T3 Code (AppImage, own T3CODE_HOME and profile) on Hyprland, publishes this checkout's theme into it with bin/t3code-omarchy-plus, and reads what the app actually renders over CDP (screenshots plus computed styles). Use it after touching the publisher, the CSS template, or anything that changes what T3 Code shows: styles, full-alt's loading skeleton, tint, new wallpaper.
+description: Prove a T3 Code Thememaxed change in the real T3 Code app. Launches a sandboxed, hidden T3 Code (AppImage, own T3CODE_HOME and profile) on Hyprland, publishes this checkout's theme into it with bin/t3code-omarchy-plus, and reads what the app actually renders over CDP (screenshots plus computed styles). Use it after touching the publisher, the CSS template, or anything that changes what T3 Code shows: styles, full-alt's background file, tint, new wallpaper.
 ---
 
 # Verify T3 Code Thememaxed
@@ -41,7 +41,8 @@ $V up            # about 15 s; prints "ready: T3 Code pid … on special:t3verif
 4. Points `CODEX_HOME` and `CLAUDE_CONFIG_DIR` at empty sandbox folders, so
    agents in the sandbox are signed out and nothing runs on the user's
    accounts.
-5. Launches `~/AppImages/t3_code_nightly.appimage` (or `T3V_APP=…`) with
+5. Launches `~/AppImages/t3_code_nightly.appimage` (or `T3V_APP=…`, which
+   the sandbox remembers for later commands) with
    `--remote-debugging-port=9339` (or `T3V_PORT=…`). The launch goes through
    Hyprland into the hidden `special:t3verify` workspace, so nothing appears
    on the user's screen.
@@ -53,7 +54,11 @@ Ready means a conversation view (`[data-workspace-area=conversation]`) exists
 and the Thememaxed CSS is applied. A process that merely answers is not ready.
 
 Requires Hyprland (Lua dispatch), Node 22 or later (built-in `WebSocket`),
-`git`, ImageMagick and, for full-alt's sharp picture, `avifenc`.
+`git` and ImageMagick. Full-alt's wallpaper is a background image file,
+which needs T3 Code 0.1.10 (or a nightly from 16 November 2026) or newer. To
+test with a build other than the user's, download its AppImage into
+`.verify/apps/` (`gh release download <tag> -R pingdotgg/t3code -p 'T3-Code-Nightly-x86_64.AppImage' -D .verify/apps`)
+and pass it as `T3V_APP`.
 
 Isolation: the user's own T3 Code (`~/.t3`, `~/.config/t3code-v2`) is never
 touched. Only one sandbox runs at a time per `T3V_RUN` and `T3V_PORT`. `up`
@@ -112,9 +117,9 @@ $V note '<text>'           # add a line to the evidence transcript
 | Field | Meaning |
 | --- | --- |
 | `themeApplied` | The theme's CSS is applied. |
-| `wallpaperHash` | Identifies the picture inside T3 Code. Equal hashes mean the same picture. |
-| `wallpaperFormat`, `wallpaperChars` | Format and size of that picture. |
-| `skeleton` | Full-alt's loading shimmer is running. |
+| `wallpaper` | The picture inside T3 Code: `from` (`css` for a data URI in the theme, `file` for full-alt's background file), its type, bytes, pixel `size` and `hash`. |
+| `wallpaperHash` | The same hash. Equal hashes mean the same picture. |
+| `backgroundUrl` | The `blob:` URL T3 Code loaded the background file into, or null. A new URL means T3 Code downloaded it again. |
 | `glass` | Full-alt's frosted column (`blur(24px)`). |
 | `sceneTint` | The tint the backdrop uses. |
 | `laneSpan`, `glassSpan` | Viewport x ranges of the chat column and of the glass behind it. |
@@ -126,7 +131,8 @@ $V note '<text>'           # add a line to the evidence transcript
 The stable handles in T3 Code:
 
 - `[data-workspace-area=conversation]`: the conversation area. Its
-  `::before` is full-alt's glass and its `::after` is the loading skeleton.
+  `::before` is full-alt's glass. The theme's background file arrives as
+  `--theme-background-image` on `<html>`, set by T3 Code once it has loaded.
 - `[data-slot=sidebar-inner]`: the sidebar, which carries the header and
   max-style wallpaper.
 - `.chat-content-lane` (`[data-timeline-root]`): the chat column, one per
@@ -177,13 +183,12 @@ The proof standards:
 - **Use the user's path.** Drive the publisher with the panel's arguments,
   and click in the app with the mouse. Never write the theme JSON by hand.
 - **Capture the action and the result.** Take a `state` before and after,
-  and a screenshot of the moment that matters, such as the skeleton while it
-  is running.
+  and a screenshot of the moment that matters.
 - **Check side effects as well as pixels.** That means `status.json`
   (wallpaper, style, tint, `published`) and the in-app `wallpaperHash`.
-- **Don't trust a single frame for animations.** The skeleton band moves, so
-  a frame can catch it off screen. `skeleton: true` (the computed
-  `animation-name`) is the proof and the screenshot is supporting evidence.
+- **Wait for asynchronous pictures.** T3 Code loads full-alt's background
+  file after the theme changes. Give a publish a second, then wait for
+  `--theme-background-image`, or `state` reads the previous picture.
 
 ## Cleanup
 
@@ -195,8 +200,8 @@ $V down
 
 - the recorded T3 Code main PID, confirmed by its pid file and the CDP port
   in its command line (Electron blanks its own environ);
-- every process whose environ carries `T3V_SANDBOX=<sandbox>`. This includes
-  the publisher's background `--warm` encoder.
+- every process whose environ carries `T3V_SANDBOX=<sandbox>`, including
+  any publisher run still going.
 
 It stops them in a fixed order:
 

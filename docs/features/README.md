@@ -62,8 +62,8 @@ what the user sees. It then has exactly four H2 sections, in this order:
 
 - [Styles](./styles.md): minimal, full, max and full-alt, and what each puts
   behind the sidebar and the conversation.
-- [Full-alt loading skeleton](./full-alt-loading.md): the shimmer shown while
-  full-alt's sharp picture encodes.
+- [Full-alt background file](./full-alt-background.md): full-alt's wallpaper
+  as a full-size file beside the theme, shown at once.
 - [Backdrop tint](./tint.md): full-alt's chat-column tint, and that changing
   it keeps the wallpaper.
 - [New wallpaper](./new-wallpaper.md): deals a different theme wallpaper
