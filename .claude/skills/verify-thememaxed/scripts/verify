@@ -145,9 +145,11 @@ EOF
 run_publisher() {
   [[ -d $RUN/t3 ]] || die "no sandbox; run: verify up"
   log "publish: t3code-omarchy-plus $*"
-  # Its own runtime dir: the publisher's lock files stay apart from the real plugin's.
+  # The real XDG_RUNTIME_DIR stays: hyprctl finds Hyprland's socket there, so
+  # the sandbox gets the user's rounding and borders. The publisher's lock is
+  # then shared with the real plugin, which only makes them take turns.
   local code=0
-  sandbox_env XDG_RUNTIME_DIR="$RUN/runtime" "$PUBLISHER" "$@" || code=$?
+  sandbox_env "$PUBLISHER" "$@" || code=$?
   log "publish: exit $code; status $(tr -d '\n ' < "$RUN/state/omarchy-t3code-plus/status.json" 2>/dev/null | head -c 400)"
   cat "$RUN/state/omarchy-t3code-plus/status.json" 2>/dev/null
   return $code
