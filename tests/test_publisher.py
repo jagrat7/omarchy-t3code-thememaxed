@@ -140,6 +140,10 @@ with open(sys.argv[1], "rb") as source:
                 self.assertIn('--omarchy-font:"Fixture Mono";', css)
                 self.assertIn('--omarchy-radius:12px;', css)
                 self.assertIn('--omarchy-border-width:3px;', css)
+                # Focus is found with the form inside the composer card (current T3 Code), and the
+                # card's glass fill takes the frame's corners (Hyprland rounding is 12px here).
+                self.assertIn('[data-slot="composer-host"]:focus-within::after', css)
+                self.assertRegex(css, r'\[data-slot="composer-shell"\]::before[^{]*\{border-radius:var\(--omarchy-radius\)')
                 if style in ("full", "max"):
                     data = base64.b64decode(re.search(r'--omarchy-wallpaper:url\("data:image/avif;base64,([^"]+)', css)[1])
                     size = subprocess.run([MAGICK, "identify", "-format", "%w %h", "-"], input=data,
