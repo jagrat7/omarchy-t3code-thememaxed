@@ -340,10 +340,16 @@
    while messages are scrolled up behind it. T3 Code gives the composer a
    view-transition-name, which stops any blur inside it from seeing the
    page behind, so the frost is a layer one level up, on the composer stack,
-   pinned to the composer's box. The open-thread frost follows the message
-   list's scroll position; without scroll-driven animations it stays off. */
-[data-slot="composer-host"] {
+   pinned to the composer card. The stash tab docked on the card gets its
+   own layer, so the gap beside the tab stays clear. The open-thread frost
+   follows the message list's scroll position; without scroll-driven
+   animations it stays off. */
+[data-chat-composer-main-surface] {
   anchor-name: --omarchy-composer;
+}
+
+[data-composer-shoulder-tab] {
+  anchor-name: --omarchy-composer-tab;
 }
 
 [class~="group/composer-stack"]::before {
@@ -358,7 +364,20 @@
   pointer-events: none;
 }
 
-[data-chat-composer-overlay].inset-0 [class~="group/composer-stack"]::before {
+[class~="group/composer-stack"]:has([data-composer-shoulder-tab])::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: anchor(--omarchy-composer-tab top);
+  left: anchor(--omarchy-composer-tab left);
+  right: anchor(--omarchy-composer-tab right);
+  bottom: anchor(--omarchy-composer top);
+  border-radius: var(--omarchy-radius) var(--omarchy-radius) 0 0;
+  pointer-events: none;
+}
+
+[data-chat-composer-overlay].inset-0 [class~="group/composer-stack"]::before,
+[data-chat-composer-overlay].inset-0 [class~="group/composer-stack"]::after {
   backdrop-filter: blur(24px);
 }
 
@@ -370,7 +389,8 @@
   timeline-scope: --omarchy-messages;
 }
 
-[data-chat-composer-overlay]:not(.inset-0) [class~="group/composer-stack"]::before {
+[data-chat-composer-overlay]:not(.inset-0) [class~="group/composer-stack"]::before,
+[data-chat-composer-overlay]:not(.inset-0) [class~="group/composer-stack"]::after {
   animation: omarchy-composer-frost linear both;
   animation-timeline: --omarchy-messages;
   animation-range: calc(100% - 2rem) 100%;
